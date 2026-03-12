@@ -5,9 +5,11 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
-  role: 'citizen' | 'official' | 'admin';
+  role: 'citizen' | 'official' | 'responder' | 'admin';
   zone: string;
   phone?: string;
+  wardId?: string;
+  badgeNumber?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -21,11 +23,13 @@ const UserSchema = new Schema<IUser>(
     role: {
       type: String,
       required: true,
-      enum: ['citizen', 'official', 'admin'],
+      enum: ['official', 'citizen', 'responder', 'admin'],
       default: 'citizen',
     },
     zone: { type: String, default: 'Mumbai' },
     phone: { type: String },
+    wardId: { type: String },
+    badgeNumber: { type: String },
   },
   { timestamps: true }
 );

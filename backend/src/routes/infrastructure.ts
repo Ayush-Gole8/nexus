@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import InfrastructureNode from '../models/InfrastructureNode';
 import Dependency from '../models/Dependency';
+import { authenticate, requireOfficial } from '../middleware/auth';
 
 const router = Router();
 
@@ -9,10 +10,11 @@ const router = Router();
 // GET /api/nodes — list all nodes with optional filters
 router.get('/nodes', async (req: Request, res: Response) => {
   try {
-    const { type, status, search } = req.query;
+    const { type, status, search, zone } = req.query;
     const filter: Record<string, any> = {};
     if (type) filter.type = type;
     if (status) filter.status = status;
+    if (zone) filter.zone = zone;
     if (search) filter.name = { $regex: search, $options: 'i' };
     const nodes = await InfrastructureNode.find(filter).sort({ criticalityScore: -1 });
     res.json(nodes);
@@ -40,8 +42,18 @@ router.get('/nodes/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/nodes — create node
-router.post('/nodes', async (req: Request, res: Response) => {
+router.post('/nodes', authenticate, requireOfficial, async (req: Request, res: Response) => {
   try {
+    const { location, zone, capacity } = req.body;
+    if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
+      return res.status(400).json({ error: 'location.lat and location.lng are required numbers' });
+    }
+    if (!zone || typeof zone !== 'string') {
+      return res.status(400).json({ error: 'zone is required' });
+    }
+    if (capacity !== undefined && (typeof capacity !== 'number' || capacity < 0)) {
+      return res.status(400).json({ error: 'capacity must be a non-negative number' });
+    }
     const node = await InfrastructureNode.create(req.body);
     res.status(201).json(node);
   } catch (err: any) {
@@ -49,8 +61,58 @@ router.post('/nodes', async (req: Request, res: Response) => {
   }
 });
 
+// PATCH /api/nodes/:id — partial update (status, load, criticality, metadata)
+router.patch('/nodes/:id', authenticate, requireOfficial, async (req: Request, res: Response) => {
+  try {
+    const allowed = ['status', 'currentLoad', 'criticalityScore', 'properties', 'operator', 'capacity', 'zone'];
+    const updates: Record<string, any> = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No patchable fields provided' });
+    }
+    const node = await InfrastructureNode.findByIdAndUpdate(
+      req.params.id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+    if (!node) return res.status(404).json({ error: 'Node not found' });
+    res.json(node);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/nodes/:id/connections — create a dependency between two nodes
+router.post('/nodes/:id/connections', authenticate, requireOfficial, async (req: Request, res: Response) => {
+  try {
+    const { targetNodeId, type, weight, bidirectional } = req.body;
+    if (!targetNodeId) return res.status(400).json({ error: 'targetNodeId is required' });
+    if (!type) return res.status(400).json({ error: 'type is required' });
+
+    const [source, target] = await Promise.all([
+      InfrastructureNode.findById(req.params.id),
+      InfrastructureNode.findById(targetNodeId),
+    ]);
+    if (!source) return res.status(404).json({ error: 'Source node not found' });
+    if (!target) return res.status(404).json({ error: 'Target node not found' });
+
+    const dep = await Dependency.create({
+      sourceNodeId: source._id,
+      targetNodeId: target._id,
+      dependencyType: type,
+      strength: weight !== undefined ? weight : 0.5,
+      bidirectional: bidirectional ?? false,
+    });
+    res.status(201).json(dep);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // PUT /api/nodes/:id — update node
-router.put('/nodes/:id', async (req: Request, res: Response) => {
+router.put('/nodes/:id', authenticate, requireOfficial, async (req: Request, res: Response) => {
   try {
     const node = await InfrastructureNode.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
@@ -64,7 +126,7 @@ router.put('/nodes/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/nodes/:id — delete node + its dependencies
-router.delete('/nodes/:id', async (req: Request, res: Response) => {
+router.delete('/nodes/:id', authenticate, requireOfficial, async (req: Request, res: Response) => {
   try {
     const node = await InfrastructureNode.findByIdAndDelete(req.params.id);
     if (!node) return res.status(404).json({ error: 'Node not found' });

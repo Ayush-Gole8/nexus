@@ -19,7 +19,8 @@ router.post('/register', async (req: Request, res: Response) => {
     }
 
     // Only admins can create official/admin accounts via separate flow
-    const userRole = role === 'official' || role === 'admin' ? role : 'citizen';
+    const allowedRoles = ['official', 'responder', 'admin'];
+    const userRole = allowedRoles.includes(role) ? role : 'citizen';
 
     const user = await User.create({ name, email, password, role: userRole, zone, phone });
     const token = generateToken(user);
@@ -32,6 +33,8 @@ router.post('/register', async (req: Request, res: Response) => {
         email: user.email,
         role: user.role,
         zone: user.zone,
+        wardId: user.wardId,
+        badgeNumber: user.badgeNumber,
       },
     });
   } catch (err: any) {

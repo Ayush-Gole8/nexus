@@ -1,6 +1,119 @@
 import { buildGraph } from './graphService';
 import InfrastructureNode from '../models/InfrastructureNode';
 
+// ── BFS Cascade ──────────────────────────────────────────────────────────────
+
+export interface BFSCascadeResult {
+  affectedNodes: string[];
+  propagationSteps: string[][];
+  cascadeDepth: number;
+  impactBySector: Record<string, number>;
+  populationImpactPct: number;
+  recoveryHours: number;
+}
+
+/**
+ * Probabilistic BFS cascade starting from a single origin node.
+ * @param originId   MongoDB _id of the origin node (string)
+ * @param magnitude  Failure magnitude [0, 1]
+ * @param resilience Network resilience [0, 1]  (higher → more resistant)
+ */
+export async function runBFSCascade(
+  originId: string,
+  magnitude: number,
+  resilience: number,
+): Promise<BFSCascadeResult> {
+  const { graph, nodeMap } = await buildGraph();
+
+  if (!graph.hasNode(originId)) {
+    return {
+      affectedNodes: [],
+      propagationSteps: [],
+      cascadeDepth: 0,
+      impactBySector: {},
+      populationImpactPct: 0,
+      recoveryHours: 0,
+    };
+  }
+
+  // adjacency map: nodeId → [{targetId, weight ∈ [0,5], type}]
+  type Neighbour = { targetId: string; weight: number; type: string };
+  const adjacency = new Map<string, Neighbour[]>();
+  graph.forEachNode((nodeId) => {
+    const neighbours: Neighbour[] = [];
+    graph.forEachOutEdge(nodeId, (_edge, attrs, _source, target) => {
+      neighbours.push({
+        targetId: target,
+        weight: (attrs.strength ?? 0.5) * 5, // scale 0-1 → 0-5
+        type: attrs.dependencyType ?? 'operational',
+      });
+    });
+    adjacency.set(nodeId, neighbours);
+  });
+
+  const affected = new Set<string>([originId]);
+  const propagationSteps: string[][] = [[originId]];
+  let frontier: string[] = [originId];
+
+  while (frontier.length > 0) {
+    const nextFrontier: string[] = [];
+    for (const nodeId of frontier) {
+      for (const { targetId, weight, type } of (adjacency.get(nodeId) ?? [])) {
+        if (affected.has(targetId)) continue;
+
+        let failProb = magnitude * (weight / 5) * (1 - resilience);
+        if (type === 'critical') failProb *= 1.5;
+        failProb = Math.min(1.0, failProb);
+
+        if (Math.random() < failProb) {
+          affected.add(targetId);
+          nextFrontier.push(targetId);
+        }
+      }
+    }
+    if (nextFrontier.length > 0) propagationSteps.push(nextFrontier);
+    frontier = nextFrontier;
+  }
+
+  // per-sector counts
+  const impactBySector: Record<string, number> = {};
+  for (const nodeId of affected) {
+    const node = nodeMap.get(nodeId);
+    if (node) impactBySector[node.type] = (impactBySector[node.type] ?? 0) + 1;
+  }
+
+  // population impact estimate (Mumbai ~20 M)
+  const POP_PER_NODE: Record<string, number> = {
+    power: 300_000, water: 500_000, transport: 400_000, telecom: 200_000, emergency: 600_000,
+  };
+  const MUMBAI_POPULATION = 20_000_000;
+  let popAffected = 0;
+  for (const nodeId of affected) {
+    const node = nodeMap.get(nodeId);
+    if (node) popAffected += POP_PER_NODE[node.type] ?? 100_000;
+  }
+  const populationImpactPct =
+    Math.min(100, Math.round((popAffected / MUMBAI_POPULATION) * 1000) / 10);
+
+  const cascadeDepth = propagationSteps.length - 1;
+  const recoveryHours = Math.round(
+    (affected.size * 2 + cascadeDepth * 8) *
+    Math.max(0.1, magnitude) *
+    Math.max(0.5, 2 - resilience),
+  );
+
+  return {
+    affectedNodes: Array.from(affected),
+    propagationSteps,
+    cascadeDepth,
+    impactBySector,
+    populationImpactPct,
+    recoveryHours,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface CascadeResult {
   impactedNodes: Array<{
     nodeId: string;
