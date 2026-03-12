@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS — City Infrastructure Intelligence</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700;900&family=Barlow:wght@300;400;500&display=swap');
+
+:root {
+  --bg: #050810;
+  --bg2: #080d1a;
+  --bg3: #0d1525;
+  --panel: rgba(10,18,38,0.85);
+  --border: rgba(40,80,160,0.35);
+  --border-bright: rgba(60,140,255,0.6);
+  --accent: #1e6fff;
+  --accent2: #00d4ff;
+  --accent3: #ff4d6d;
+  --accent4: #00ff9d;
+  --accent5: #ffb800;
+  --text: #c8d8f0;
+  --text-dim: #4a6080;
+  --text-bright: #e8f4ff;
+  --power: #ffb800;
+  --water: #00d4ff;
+  --transport: #00ff9d;
+  --telecom: #b44dff;
+  --emergency: #ff4d6d;
+  --mono: 'Share Tech Mono', monospace;
+  --display: 'Barlow Condensed', sans-serif;
+  --body: 'Barlow', sans-serif;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Ambient background */
+body::before {
+  content:'';
+  position:fixed;
+  inset:0;
+  background:
+    radial-gradient(ellipse 800px 500px at 20% 30%, rgba(30,111,255,0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 600px 400px at 80% 70%, rgba(0,212,255,0.05) 0%, transparent 70%),
+    radial-gradient(ellipse 400px 300px at 60% 10%, rgba(255,77,109,0.04) 0%, transparent 70%);
+  pointer-events:none;
+  z-index:0;
+}
+
+/* ─── HEADER ─── */
+header {
+  position:relative; z-index:10;
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(5,8,16,0.98) 0%, rgba(8,13,26,0.95) 100%);
+  flex-shrink:0;
+}
+.logo {
+  display:flex; align-items:center; gap:12px;
+}
+.logo-icon {
+  width:36px; height:36px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  display:flex; align-items:center; justify-content:center;
+  position:relative;
+  animation: rotate-border 8s linear infinite;
+}
+@keyframes rotate-border {
+  to { box-shadow: 0 0 0 2px transparent, 0 0 20px var(--accent); }
+  50% { box-shadow: 0 0 0 2px var(--accent2), 0 0 30px var(--accent2); }
+}
+.logo-icon svg { width:18px; height:18px; fill:var(--accent2); }
+.logo-text { font-family:var(--display); font-weight:900; font-size:22px; letter-spacing:6px; color:var(--text-bright); }
+.logo-sub { font-family:var(--mono); font-size:9px; color:var(--text-dim); letter-spacing:3px; margin-top:-2px; }
+
+.header-center {
+  font-family:var(--mono); font-size:11px; color:var(--text-dim);
+  display:flex; gap:24px;
+}
+.header-center span { display:flex; align-items:center; gap:6px; }
+.pulse-dot {
+  width:6px; height:6px; border-radius:50%; background:var(--accent4);
+  animation: pulse-anim 2s ease-in-out infinite;
+}
+@keyframes pulse-anim {
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:0.4;transform:scale(0.7)}
+}
+
+.header-right { display:flex; align-items:center; gap:16px; }
+.sys-badge {
+  font-family:var(--mono); font-size:10px; padding:4px 10px;
+  border: 1px solid var(--accent4); border-radius:3px;
+  color:var(--accent4); letter-spacing:2px;
+}
+
+/* ─── TABS ─── */
+.tabs {
+  display:flex; gap:2px;
+  padding: 0 24px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink:0;
+  position:relative; z-index:10;
+}
+.tab {
+  font-family:var(--display); font-weight:600; font-size:12px; letter-spacing:2px;
+  padding: 10px 20px;
+  cursor:pointer; border:none; background:transparent;
+  color:var(--text-dim);
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  text-transform:uppercase;
+}
+.tab:hover { color:var(--text); }
+.tab.active { color:var(--accent2); border-bottom-color:var(--accent2); }
+
+/* ─── MAIN CONTENT ─── */
+main {
+  flex:1; display:flex; overflow:hidden; position:relative; z-index:1;
+}
+
+.view { display:none; width:100%; height:100%; }
+.view.active { display:flex; }
+
+/* ─── PANELS ─── */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius:4px;
+  backdrop-filter: blur(10px);
+}
+.panel-header {
+  font-family:var(--display); font-weight:700; font-size:12px;
+  letter-spacing:3px; color:var(--accent2);
+  padding:10px 14px; border-bottom:1px solid var(--border);
+  text-transform:uppercase; display:flex; align-items:center; gap:8px;
+}
+.panel-header .dot {
+  width:5px; height:5px; border-radius:50%; background:var(--accent2);
+}
+
+/* ─── VIEW 1: DEPENDENCY MAP ─── */
+#view-map {
+  display:none; flex-direction:row; gap:0;
+}
+#view-map.active { display:flex; }
+.map-sidebar {
+  width:240px; flex-shrink:0;
+  border-right:1px solid var(--border);
+  display:flex; flex-direction:column;
+  overflow-y:auto; overflow-x:hidden;
+}
+.map-canvas-area {
+  flex:1; display:flex; flex-direction:column;
+  position:relative;
+}
+#dependency-canvas {
+  flex:1; width:100%; display:block;
+  cursor:grab;
+}
+#dependency-canvas:active { cursor:grabbing; }
+
+.sidebar-section { padding:12px; border-bottom:1px solid var(--border); }
+.sidebar-label {
+  font-family:var(--mono); font-size:10px; letter-spacing:2px;
+  color:var(--text-dim); margin-bottom:10px;
+}
+.infra-layer {
+  display:flex; align-items:center; gap:8px;
+  padding:6px 8px; border-radius:3px; cursor:pointer;
+  transition:background 0.2s; margin-bottom:3px;
+  font-size:12px; user-select:none;
+}
+.infra-layer:hover { background:rgba(255,255,255,0.04); }
+.infra-layer.active-layer { background:rgba(30,111,255,0.1); }
+.layer-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.layer-name { flex:1; font-family:var(--body); font-size:12px; color:var(--text); }
+.layer-count { font-family:var(--mono); font-size:10px; color:var(--text-dim); }
+
+.map-legend { padding:12px; }
+.legend-item { display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:11px; color:var(--text-dim); }
+.legend-line { height:2px; width:24px; }
+
+.node-detail-panel {
+  position:absolute; right:16px; top:16px;
+  width:220px; z-index:20;
+  display:none;
+}
+.node-detail-panel.visible { display:block; }
+
+.stat-row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:11px; }
+.stat-label { color:var(--text-dim); font-family:var(--mono); font-size:10px; }
+.stat-val { color:var(--text-bright); font-family:var(--mono); font-size:11px; }
+
+/* ─── VIEW 2: CASCADING ANALYSIS ─── */
+#view-cascade { display:none; flex-direction:row; gap:12px; padding:12px; }
+#view-cascade.active { display:flex; }
+.cascade-left { width:300px; flex-shrink:0; display:flex; flex-direction:column; gap:10px; }
+.cascade-main { flex:1; display:flex; flex-direction:column; gap:10px; }
+
+.risk-bar-container { padding:12px; }
+.risk-item { margin-bottom:12px; }
+.risk-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+.risk-name { font-size:11px; color:var(--text); }
+.risk-pct { font-family:var(--mono); font-size:11px; }
+.risk-bar-bg { height:4px; background:rgba(255,255,255,0.06); border-radius:2px; overflow:hidden; }
+.risk-bar-fill { height:100%; border-radius:2px; transition:width 1s ease; }
+
+.impact-matrix { padding:12px; flex:1; overflow:auto; }
+table.matrix {
+  width:100%; border-collapse:collapse;
+  font-family:var(--mono); font-size:10px;
+}
+table.matrix th {
+  padding:6px 8px; text-align:left;
+  color:var(--text-dim); letter-spacing:1px;
+  border-bottom:1px solid var(--border);
+}
+table.matrix td { padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.03); }
+table.matrix tr:hover td { background:rgba(255,255,255,0.03); }
+
+.impact-cell {
+  width:20px; height:20px; border-radius:2px;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-size:9px; font-weight:700;
+}
+
+.critical-nodes { padding:12px; }
+.crit-node {
+  display:flex; align-items:center; gap:10px;
+  padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.04);
+}
+.crit-rank {
+  font-family:var(--mono); font-size:10px; color:var(--text-dim); width:16px;
+}
+.crit-info { flex:1; }
+.crit-name { font-size:12px; color:var(--text-bright); }
+.crit-type { font-family:var(--mono); font-size:9px; color:var(--text-dim); }
+.crit-score {
+  font-family:var(--mono); font-size:13px; font-weight:700;
+}
+
+/* ─── VIEW 3: SCENARIO SIM ─── */
+#view-sim { display:none; flex-direction:column; }
+#view-sim.active { display:flex; }
+.sim-top {
+  display:flex; gap:10px; padding:12px; flex-shrink:0;
+  border-bottom:1px solid var(--border);
+}
+.sim-bottom { flex:1; display:flex; gap:10px; padding:12px; overflow:hidden; }
+
+.scenario-card {
+  flex:1; padding:14px 16px; cursor:pointer;
+  border:1px solid var(--border); border-radius:4px;
+  background:rgba(10,18,38,0.6); transition:all 0.2s;
+  position:relative; overflow:hidden;
+}
+.scenario-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:var(--card-color, var(--accent));
+  transition:height 0.2s;
+}
+.scenario-card:hover::before, .scenario-card.selected::before { height:3px; }
+.scenario-card:hover, .scenario-card.selected {
+  border-color:var(--card-color, var(--accent));
+  background:rgba(30,111,255,0.08);
+}
+.sc-icon { font-size:20px; margin-bottom:6px; }
+.sc-name { font-family:var(--display); font-weight:700; font-size:14px; letter-spacing:1px; margin-bottom:3px; }
+.sc-desc { font-size:10px; color:var(--text-dim); line-height:1.4; }
+
+.sim-left { width:280px; flex-shrink:0; display:flex; flex-direction:column; gap:10px; overflow-y:auto; }
+.sim-right { flex:1; display:flex; flex-direction:column; gap:10px; }
+
+.slider-group { padding:12px; }
+.slider-item { margin-bottom:14px; }
+.slider-label { display:flex; justify-content:space-between; margin-bottom:6px; font-size:11px; }
+.slider-name { color:var(--text-dim); font-family:var(--mono); font-size:10px; letter-spacing:1px; }
+.slider-val { color:var(--accent2); font-family:var(--mono); font-size:11px; }
+input[type=range] {
+  width:100%; height:3px; border-radius:2px;
+  background:rgba(255,255,255,0.1); outline:none;
+  -webkit-appearance:none; cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none;
+  width:14px; height:14px; border-radius:50%;
+  background:var(--accent2); cursor:pointer;
+  border:2px solid var(--bg); box-shadow:0 0 8px var(--accent2);
+}
+
+.run-btn {
+  margin:0 12px 12px;
+  padding:10px; border:none; border-radius:3px;
+  background:linear-gradient(135deg, var(--accent), var(--accent2));
+  color:#fff; font-family:var(--display); font-weight:700;
+  font-size:13px; letter-spacing:3px; cursor:pointer;
+  text-transform:uppercase; transition:all 0.2s;
+}
+.run-btn:hover { opacity:0.85; transform:translateY(-1px); }
+.run-btn:active { transform:translateY(0); }
+
+.propagation-area { flex:1; position:relative; overflow:hidden; }
+#sim-canvas { width:100%; height:100%; display:block; }
+
+.sim-stats { display:flex; gap:10px; }
+.sim-stat {
+  flex:1; padding:12px; text-align:center;
+  border:1px solid var(--border); border-radius:4px;
+  background:rgba(10,18,38,0.6);
+}
+.sim-stat-val {
+  font-family:var(--display); font-weight:900; font-size:28px;
+  color:var(--text-bright);
+}
+.sim-stat-label { font-family:var(--mono); font-size:9px; color:var(--text-dim); letter-spacing:2px; margin-top:3px; }
+
+/* ─── VIEW 4: AI INSIGHTS ─── */
+#view-ai { display:none; flex-direction:row; gap:0; }
+#view-ai.active { display:flex; }
+.ai-left {
+  width:320px; flex-shrink:0;
+  border-right:1px solid var(--border);
+  display:flex; flex-direction:column;
+}
+.ai-right { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+.chat-messages {
+  flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px;
+}
+.chat-messages::-webkit-scrollbar { width:4px; }
+.chat-messages::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+.msg {
+  display:flex; gap:10px; animation:msg-in 0.3s ease;
+}
+@keyframes msg-in {
+  from{opacity:0;transform:translateY(8px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.msg.user { flex-direction:row-reverse; }
+.msg-avatar {
+  width:28px; height:28px; border-radius:50%; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:700;
+}
+.msg.ai .msg-avatar { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; }
+.msg.user .msg-avatar { background:rgba(255,255,255,0.1); color:var(--text); }
+.msg-bubble {
+  max-width:80%; padding:10px 14px; border-radius:4px;
+  font-size:13px; line-height:1.6;
+}
+.msg.ai .msg-bubble { background:rgba(30,111,255,0.12); border:1px solid rgba(30,111,255,0.25); color:var(--text-bright); }
+.msg.user .msg-bubble { background:rgba(255,255,255,0.07); border:1px solid var(--border); color:var(--text); }
+
+.chat-input-area {
+  padding:12px 16px; border-top:1px solid var(--border);
+  display:flex; gap:10px;
+}
+.chat-input {
+  flex:1; background:rgba(255,255,255,0.05); border:1px solid var(--border);
+  border-radius:3px; padding:9px 12px;
+  color:var(--text-bright); font-family:var(--body); font-size:13px; outline:none;
+  transition:border-color 0.2s;
+}
+.chat-input:focus { border-color:var(--accent); }
+.chat-send {
+  padding:9px 16px; background:var(--accent); border:none; border-radius:3px;
+  color:#fff; font-family:var(--mono); font-size:11px; cursor:pointer;
+  letter-spacing:1px; transition:background 0.2s;
+}
+.chat-send:hover { background:var(--accent2); }
+
+.ai-metrics { padding:12px; border-bottom:1px solid var(--border); }
+.metric-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.metric-box {
+  padding:10px; border:1px solid var(--border); border-radius:3px;
+  background:rgba(10,18,38,0.5); text-align:center;
+}
+.metric-val { font-family:var(--display); font-weight:700; font-size:22px; color:var(--text-bright); }
+.metric-lbl { font-family:var(--mono); font-size:9px; color:var(--text-dim); letter-spacing:1px; }
+
+.alert-feed { flex:1; overflow-y:auto; padding:12px; }
+.alert-item {
+  display:flex; gap:10px; padding:8px 0;
+  border-bottom:1px solid rgba(255,255,255,0.04);
+  animation:msg-in 0.3s ease;
+}
+.alert-sev {
+  width:4px; border-radius:2px; flex-shrink:0; margin:2px 0;
+}
+.alert-content { flex:1; }
+.alert-title { font-size:12px; color:var(--text-bright); margin-bottom:2px; }
+.alert-desc { font-size:11px; color:var(--text-dim); line-height:1.4; }
+.alert-time { font-family:var(--mono); font-size:9px; color:var(--text-dim); margin-top:3px; }
+
+/* ─── VIEW 5: DASHBOARD ─── */
+#view-dash { display:none; flex-direction:column; }
+#view-dash.active { display:flex; overflow-y:auto; }
+.dash-grid {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  grid-template-rows:auto;
+  gap:10px; padding:12px;
+}
+.dash-kpi {
+  padding:16px; border:1px solid var(--border); border-radius:4px;
+  background:rgba(10,18,38,0.7); position:relative; overflow:hidden;
+}
+.dash-kpi::after {
+  content:''; position:absolute;
+  bottom:0; left:0; right:0; height:2px;
+  background:var(--kpi-color, var(--accent));
+}
+.kpi-val { font-family:var(--display); font-weight:900; font-size:32px; color:var(--text-bright); }
+.kpi-label { font-family:var(--mono); font-size:9px; color:var(--text-dim); letter-spacing:2px; margin-top:4px; }
+.kpi-change { font-family:var(--mono); font-size:10px; margin-top:6px; }
+.kpi-change.up { color:var(--accent4); }
+.kpi-change.dn { color:var(--accent3); }
+
+.dash-chart-area {
+  grid-column:span 2; grid-row:span 2;
+  border:1px solid var(--border); border-radius:4px;
+  background:rgba(10,18,38,0.7); overflow:hidden;
+}
+.dash-chart-area canvas { width:100% !important; height:250px !important; }
+.dash-area { border:1px solid var(--border); border-radius:4px; background:rgba(10,18,38,0.7); }
+
+.resilience-gauge { padding:16px; text-align:center; }
+#gauge-canvas { display:block; margin:0 auto; }
+
+.status-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:12px; }
+.status-item {
+  padding:8px 10px; border-radius:3px;
+  border-left:3px solid var(--item-color,var(--accent));
+  background:rgba(255,255,255,0.03);
+}
+.status-name { font-size:11px; color:var(--text-bright); margin-bottom:3px; }
+.status-val { font-family:var(--mono); font-size:12px; }
+
+/* ─── SCROLLBAR ─── */
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+/* ─── LOADING ─── */
+.typing-indicator { display:flex; gap:4px; padding:4px 0; }
+.typing-dot {
+  width:6px; height:6px; border-radius:50%; background:var(--accent);
+  animation:typing 1.2s ease infinite;
+}
+.typing-dot:nth-child(2){animation-delay:.2s}
+.typing-dot:nth-child(3){animation-delay:.4s}
+@keyframes typing{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+
+.tag {
+  display:inline-block; padding:2px 7px; border-radius:2px;
+  font-family:var(--mono); font-size:9px; letter-spacing:1px;
+  margin-right:4px; margin-bottom:4px;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <div>
+      <div class="logo-text">NEXUS</div>
+      <div class="logo-sub">City Infrastructure Intelligence Platform</div>
+    </div>
+  </div>
+  <div class="header-center">
+    <span><div class="pulse-dot"></div> LIVE MONITORING</span>
+    <span>CITY: METRO-A1 &nbsp;|&nbsp; NODES: 47 &nbsp;|&nbsp; EDGES: 93</span>
+    <span id="clock" style="font-size:10px;color:var(--text-dim)"></span>
+  </div>
+  <div class="header-right">
+    <div class="sys-badge">SYS NOMINAL</div>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchView('map',this)">⬡ Dependency Map</button>
+  <button class="tab" onclick="switchView('cascade',this)">⚡ Cascading Analysis</button>
+  <button class="tab" onclick="switchView('sim',this)">▶ Scenario Simulation</button>
+  <button class="tab" onclick="switchView('ai',this)">◈ AI Insights</button>
+  <button class="tab" onclick="switchView('dash',this)">▦ Dashboard</button>
+</div>
+
+<main>
+
+<!-- ═══ VIEW: DEPENDENCY MAP ═══ -->
+<div id="view-map" class="view active">
+  <div class="map-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">INFRASTRUCTURE LAYERS</div>
+      <div class="infra-layer active-layer" onclick="toggleLayer('power',this)">
+        <div class="layer-dot" style="background:var(--power)"></div>
+        <div class="layer-name">Power Grid</div>
+        <div class="layer-count" id="cnt-power">12</div>
+      </div>
+      <div class="infra-layer active-layer" onclick="toggleLayer('water',this)">
+        <div class="layer-dot" style="background:var(--water)"></div>
+        <div class="layer-name">Water Supply</div>
+        <div class="layer-count" id="cnt-water">9</div>
+      </div>
+      <div class="infra-layer active-layer" onclick="toggleLayer('transport',this)">
+        <div class="layer-dot" style="background:var(--transport)"></div>
+        <div class="layer-name">Transportation</div>
+        <div class="layer-count" id="cnt-transport">11</div>
+      </div>
+      <div class="infra-layer active-layer" onclick="toggleLayer('telecom',this)">
+        <div class="layer-dot" style="background:var(--telecom)"></div>
+        <div class="layer-name">Telecom</div>
+        <div class="layer-count" id="cnt-telecom">8</div>
+      </div>
+      <div class="infra-layer active-layer" onclick="toggleLayer('emergency',this)">
+        <div class="layer-dot" style="background:var(--emergency)"></div>
+        <div class="layer-name">Emergency Svcs</div>
+        <div class="layer-count" id="cnt-emergency">7</div>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">DEPENDENCY TYPES</div>
+      <div class="map-legend">
+        <div class="legend-item">
+          <div class="legend-line" style="background:rgba(255,255,255,0.4)"></div>
+          <span>Direct dependency</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line" style="background:repeating-linear-gradient(90deg,rgba(255,255,255,0.3) 0,rgba(255,255,255,0.3) 4px,transparent 4px,transparent 8px)"></div>
+          <span>Indirect dependency</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line" style="background:var(--accent3)"></div>
+          <span>Critical path</span>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">FILTER BY STATUS</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:11px;cursor:pointer;">
+          <input type="checkbox" checked id="chk-operational" onchange="filterStatus()">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--accent4)"></div>
+          Operational
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:11px;cursor:pointer;">
+          <input type="checkbox" checked id="chk-degraded" onchange="filterStatus()">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--accent5)"></div>
+          Degraded
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:11px;cursor:pointer;">
+          <input type="checkbox" checked id="chk-critical" onchange="filterStatus()">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--accent3)"></div>
+          Critical
+        </label>
+      </div>
+    </div>
+    <div class="sidebar-section" style="flex:1">
+      <div class="sidebar-label">SELECTED NODE</div>
+      <div id="selected-info" style="font-size:11px;color:var(--text-dim);margin-top:8px;">Click a node to inspect</div>
+    </div>
+  </div>
+
+  <div class="map-canvas-area">
+    <svg id="dependency-canvas"></svg>
+
+    <div class="node-detail-panel panel" id="node-detail">
+      <div class="panel-header"><div class="dot"></div><span id="nd-title">Node Detail</span></div>
+      <div style="padding:10px 12px;">
+        <div class="stat-row"><span class="stat-label">TYPE</span><span class="stat-val" id="nd-type">—</span></div>
+        <div class="stat-row"><span class="stat-label">STATUS</span><span class="stat-val" id="nd-status">—</span></div>
+        <div class="stat-row"><span class="stat-label">CRITICALITY</span><span class="stat-val" id="nd-crit">—</span></div>
+        <div class="stat-row"><span class="stat-label">DEPENDENCIES</span><span class="stat-val" id="nd-deps">—</span></div>
+        <div class="stat-row"><span class="stat-label">DEPENDENTS</span><span class="stat-val" id="nd-dependents">—</span></div>
+        <div class="stat-row" style="border:none"><span class="stat-label">UPTIME</span><span class="stat-val" id="nd-uptime">—</span></div>
+        <div style="margin-top:10px;">
+          <div class="stat-label" style="margin-bottom:6px;">AFFECTS SECTORS</div>
+          <div id="nd-sectors" style="font-size:11px;color:var(--text-dim);">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ VIEW: CASCADING ANALYSIS ═══ -->
+<div id="view-cascade" class="view">
+  <div class="cascade-left">
+    <div class="panel" style="flex-shrink:0">
+      <div class="panel-header"><div class="dot"></div>VULNERABILITY SCORES</div>
+      <div class="risk-bar-container" id="vuln-bars"></div>
+    </div>
+    <div class="panel" style="flex:1;overflow:auto">
+      <div class="panel-header"><div class="dot"></div>CRITICAL NODES RANKING</div>
+      <div class="critical-nodes" id="crit-nodes-list"></div>
+    </div>
+  </div>
+  <div class="cascade-main">
+    <div class="panel" style="flex-shrink:0">
+      <div class="panel-header"><div class="dot"></div>CROSS-SECTOR IMPACT MATRIX (failure propagation)</div>
+      <div class="impact-matrix">
+        <table class="matrix" id="impact-matrix-table"></table>
+      </div>
+    </div>
+    <div class="panel" style="flex:1">
+      <div class="panel-header"><div class="dot"></div>CASCADE PROPAGATION TIMELINE</div>
+      <div style="padding:12px;height:calc(100% - 40px)">
+        <canvas id="cascade-chart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ VIEW: SCENARIO SIMULATION ═══ -->
+<div id="view-sim" class="view">
+  <div class="sim-top">
+    <div class="scenario-card selected" style="--card-color:var(--power)" id="sc-power" onclick="selectScenario('power',this)">
+      <div class="sc-icon">⚡</div>
+      <div class="sc-name">POWER OUTAGE</div>
+      <div class="sc-desc">Grid substation failure triggers cascade through dependent systems</div>
+    </div>
+    <div class="scenario-card" style="--card-color:var(--water)" id="sc-water" onclick="selectScenario('water',this)">
+      <div class="sc-icon">💧</div>
+      <div class="sc-name">WATER DISRUPTION</div>
+      <div class="sc-desc">Main supply line rupture affects hospitals and fire response</div>
+    </div>
+    <div class="scenario-card" style="--card-color:var(--transport)" id="sc-transport" onclick="selectScenario('transport',this)">
+      <div class="sc-icon">🛣</div>
+      <div class="sc-name">ROAD NETWORK FAILURE</div>
+      <div class="sc-desc">Bridge closure blocks emergency access to critical zones</div>
+    </div>
+    <div class="scenario-card" style="--card-color:var(--telecom)" id="sc-telecom" onclick="selectScenario('telecom',this)">
+      <div class="sc-icon">📡</div>
+      <div class="sc-name">TELECOM OUTAGE</div>
+      <div class="sc-desc">Core network node failure disrupts coordination and SCADA</div>
+    </div>
+    <div class="scenario-card" style="--card-color:#ff6b35" id="sc-weather" onclick="selectScenario('weather',this)">
+      <div class="sc-icon">🌪</div>
+      <div class="sc-name">EXTREME WEATHER</div>
+      <div class="sc-desc">Simultaneous multi-system failure from catastrophic weather event</div>
+    </div>
+  </div>
+
+  <div class="sim-bottom">
+    <div class="sim-left">
+      <div class="panel">
+        <div class="panel-header"><div class="dot"></div>SCENARIO PARAMETERS</div>
+        <div class="slider-group" id="sim-sliders"></div>
+        <button class="run-btn" onclick="runSimulation()">▶ RUN SIMULATION</button>
+      </div>
+      <div class="panel" style="flex:1;overflow:auto">
+        <div class="panel-header"><div class="dot"></div>PROPAGATION LOG</div>
+        <div id="sim-log" style="padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--text-dim);line-height:1.8;"></div>
+      </div>
+    </div>
+    <div class="sim-right">
+      <div class="sim-stats">
+        <div class="sim-stat"><div class="sim-stat-val" id="stat-affected">0</div><div class="sim-stat-label">NODES AFFECTED</div></div>
+        <div class="sim-stat"><div class="sim-stat-val" id="stat-cascade">0</div><div class="sim-stat-label">CASCADE DEPTH</div></div>
+        <div class="sim-stat"><div class="sim-stat-val" id="stat-pop">0%</div><div class="sim-stat-label">POPULATION IMPACT</div></div>
+        <div class="sim-stat"><div class="sim-stat-val" id="stat-recovery">0h</div><div class="sim-stat-label">EST. RECOVERY</div></div>
+      </div>
+      <div class="panel propagation-area" style="flex:1">
+        <div class="panel-header"><div class="dot"></div>PROPAGATION VISUALIZATION</div>
+        <canvas id="sim-canvas" style="width:100%;height:calc(100% - 40px)"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ VIEW: AI INSIGHTS ═══ -->
+<div id="view-ai" class="view">
+  <div class="ai-left">
+    <div class="panel-header" style="border-bottom:1px solid var(--border);padding:12px 16px;">
+      <div class="dot"></div>SYSTEM METRICS
+    </div>
+    <div class="ai-metrics">
+      <div class="metric-grid">
+        <div class="metric-box"><div class="metric-val" style="color:var(--accent4)">94%</div><div class="metric-lbl">OVERALL RESILIENCE</div></div>
+        <div class="metric-box"><div class="metric-val" style="color:var(--accent5)">3</div><div class="metric-lbl">ACTIVE ALERTS</div></div>
+        <div class="metric-box"><div class="metric-val" style="color:var(--accent2)">47</div><div class="metric-lbl">NODES MONITORED</div></div>
+        <div class="metric-box"><div class="metric-val" style="color:var(--accent3)">2</div><div class="metric-lbl">CRITICAL RISKS</div></div>
+      </div>
+    </div>
+    <div class="panel-header" style="border-bottom:1px solid var(--border);border-top:1px solid var(--border);padding:10px 16px;">
+      <div class="dot"></div>LIVE ALERT FEED
+    </div>
+    <div class="alert-feed" id="alert-feed"></div>
+  </div>
+  <div class="ai-right">
+    <div class="panel-header" style="border-bottom:1px solid var(--border);">
+      <div class="dot"></div>NEXUS AI ANALYST · Powered by Claude
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-area">
+      <input class="chat-input" id="chat-input" type="text"
+        placeholder="Ask about infrastructure risks, dependencies, or resilience..." 
+        onkeydown="if(event.key==='Enter')sendMessage()">
+      <button class="chat-send" onclick="sendMessage()">SEND</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ VIEW: DASHBOARD ═══ -->
+<div id="view-dash" class="view">
+  <div class="dash-grid">
+    <div class="dash-kpi" style="--kpi-color:var(--accent4)">
+      <div class="kpi-val">94.2%</div>
+      <div class="kpi-label">SYSTEM RESILIENCE INDEX</div>
+      <div class="kpi-change up">↑ +2.1% vs last week</div>
+    </div>
+    <div class="dash-kpi" style="--kpi-color:var(--accent3)">
+      <div class="kpi-val">3</div>
+      <div class="kpi-label">CRITICAL NODES AT RISK</div>
+      <div class="kpi-change dn">↑ +1 since yesterday</div>
+    </div>
+    <div class="dash-kpi" style="--kpi-color:var(--accent5)">
+      <div class="kpi-val">7</div>
+      <div class="kpi-label">ACTIVE DEPENDENCIES FLAGGED</div>
+      <div class="kpi-change dn">↑ +2 new flags</div>
+    </div>
+    <div class="dash-kpi" style="--kpi-color:var(--accent2)">
+      <div class="kpi-val">2.4h</div>
+      <div class="kpi-label">AVG RECOVERY TIME (est.)</div>
+      <div class="kpi-change up">↓ -0.6h improved</div>
+    </div>
+
+    <div class="dash-chart-area">
+      <div class="panel-header"><div class="dot"></div>INFRASTRUCTURE HEALTH OVER TIME</div>
+      <div style="padding:10px"><canvas id="health-chart"></canvas></div>
+    </div>
+    <div class="dash-chart-area">
+      <div class="panel-header"><div class="dot"></div>SECTOR RESILIENCE COMPARISON</div>
+      <div style="padding:10px"><canvas id="radar-chart"></canvas></div>
+    </div>
+
+    <div class="dash-area" style="grid-column:span 2">
+      <div class="panel-header"><div class="dot"></div>INFRASTRUCTURE STATUS OVERVIEW</div>
+      <div class="status-grid" id="status-grid"></div>
+    </div>
+    <div class="dash-area" style="grid-column:span 2">
+      <div class="panel-header"><div class="dot"></div>DEPENDENCY LINK HEALTH</div>
+      <div style="padding:10px;height:180px"><canvas id="dep-chart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// DATA MODEL
+// ═══════════════════════════════════════════════════════════
+const INFRA = {
+  power: {color:'#ffb800', label:'Power Grid'},
+  water: {color:'#00d4ff', label:'Water Supply'},
+  transport: {color:'#00ff9d', label:'Transportation'},
+  telecom: {color:'#b44dff', label:'Telecom'},
+  emergency: {color:'#ff4d6d', label:'Emergency Svcs'}
+};
+
+const NODES = [
+  // Power
+  {id:'p1',type:'power',name:'North Substation',status:'operational',criticality:9,uptime:99.2,x:0,y:0},
+  {id:'p2',type:'power',name:'Central Grid Hub',status:'operational',criticality:10,uptime:99.8,x:0,y:0},
+  {id:'p3',type:'power',name:'South Substation',status:'degraded',criticality:7,uptime:94.1,x:0,y:0},
+  {id:'p4',type:'power',name:'East Power Plant',status:'operational',criticality:8,uptime:97.5,x:0,y:0},
+  {id:'p5',type:'power',name:'West Distribution',status:'operational',criticality:6,uptime:98.3,x:0,y:0},
+  {id:'p6',type:'power',name:'Solar Farm Alpha',status:'operational',criticality:4,uptime:96.0,x:0,y:0},
+  {id:'p7',type:'power',name:'Battery Reserve A',status:'operational',criticality:5,uptime:99.1,x:0,y:0},
+  {id:'p8',type:'power',name:'Emergency Gen Hub',status:'operational',criticality:8,uptime:99.9,x:0,y:0},
+  {id:'p9',type:'power',name:'Industrial Zone PS',status:'critical',criticality:7,uptime:88.4,x:0,y:0},
+  {id:'p10',type:'power',name:'Residential Feeder N',status:'operational',criticality:5,uptime:97.2,x:0,y:0},
+  {id:'p11',type:'power',name:'Residential Feeder S',status:'operational',criticality:5,uptime:97.0,x:0,y:0},
+  {id:'p12',type:'power',name:'Hospital Power Link',status:'operational',criticality:10,uptime:99.99,x:0,y:0},
+  // Water
+  {id:'w1',type:'water',name:'Main Reservoir',status:'operational',criticality:10,uptime:99.5,x:0,y:0},
+  {id:'w2',type:'water',name:'Pump Station Alpha',status:'operational',criticality:9,uptime:98.7,x:0,y:0},
+  {id:'w3',type:'water',name:'Treatment Plant 1',status:'operational',criticality:8,uptime:99.1,x:0,y:0},
+  {id:'w4',type:'water',name:'Pump Station Beta',status:'degraded',criticality:7,uptime:93.2,x:0,y:0},
+  {id:'w5',type:'water',name:'Distribution Hub W',status:'operational',criticality:6,uptime:97.8,x:0,y:0},
+  {id:'w6',type:'water',name:'Hospital Water Svc',status:'operational',criticality:9,uptime:99.9,x:0,y:0},
+  {id:'w7',type:'water',name:'Fire Hydrant Network',status:'operational',criticality:8,uptime:98.5,x:0,y:0},
+  {id:'w8',type:'water',name:'Wastewater Plant',status:'operational',criticality:6,uptime:96.3,x:0,y:0},
+  {id:'w9',type:'water',name:'Emergency Reserve',status:'operational',criticality:7,uptime:99.0,x:0,y:0},
+  // Transport
+  {id:'t1',type:'transport',name:'Central Bridge',status:'operational',criticality:9,uptime:98.8,x:0,y:0},
+  {id:'t2',type:'transport',name:'Highway Interchange',status:'operational',criticality:8,uptime:99.0,x:0,y:0},
+  {id:'t3',type:'transport',name:'Metro Line Alpha',status:'operational',criticality:7,uptime:96.5,x:0,y:0},
+  {id:'t4',type:'transport',name:'Airport Access Rd',status:'operational',criticality:6,uptime:98.2,x:0,y:0},
+  {id:'t5',type:'transport',name:'Hospital Corridor',status:'operational',criticality:9,uptime:99.5,x:0,y:0},
+  {id:'t6',type:'transport',name:'Emergency Route A',status:'operational',criticality:10,uptime:99.8,x:0,y:0},
+  {id:'t7',type:'transport',name:'Port Access Road',status:'degraded',criticality:6,uptime:91.0,x:0,y:0},
+  {id:'t8',type:'transport',name:'Industrial Freight Rd',status:'operational',criticality:5,uptime:97.1,x:0,y:0},
+  {id:'t9',type:'transport',name:'Evac Route North',status:'operational',criticality:8,uptime:98.9,x:0,y:0},
+  {id:'t10',type:'transport',name:'Evac Route South',status:'operational',criticality:8,uptime:98.7,x:0,y:0},
+  {id:'t11',type:'transport',name:'Metro Line Beta',status:'operational',criticality:6,uptime:95.8,x:0,y:0},
+  // Telecom
+  {id:'c1',type:'telecom',name:'Core Network Node',status:'operational',criticality:10,uptime:99.95,x:0,y:0},
+  {id:'c2',type:'telecom',name:'Emergency Radio Net',status:'operational',criticality:10,uptime:99.99,x:0,y:0},
+  {id:'c3',type:'telecom',name:'ISP Hub Alpha',status:'operational',criticality:7,uptime:99.1,x:0,y:0},
+  {id:'c4',type:'telecom',name:'Cell Tower Grid',status:'operational',criticality:8,uptime:98.5,x:0,y:0},
+  {id:'c5',type:'telecom',name:'SCADA Control Net',status:'critical',criticality:9,uptime:87.2,x:0,y:0},
+  {id:'c6',type:'telecom',name:'Data Center A',status:'operational',criticality:7,uptime:99.3,x:0,y:0},
+  {id:'c7',type:'telecom',name:'Satellite Ground Stn',status:'operational',criticality:6,uptime:97.8,x:0,y:0},
+  {id:'c8',type:'telecom',name:'Fiber Backbone N-S',status:'operational',criticality:9,uptime:99.7,x:0,y:0},
+  // Emergency
+  {id:'e1',type:'emergency',name:'Central Hospital',status:'operational',criticality:10,uptime:99.99,x:0,y:0},
+  {id:'e2',type:'emergency',name:'Fire Station Main',status:'operational',criticality:9,uptime:99.5,x:0,y:0},
+  {id:'e3',type:'emergency',name:'Police HQ',status:'operational',criticality:8,uptime:99.2,x:0,y:0},
+  {id:'e4',type:'emergency',name:'Emergency EOC',status:'operational',criticality:10,uptime:99.9,x:0,y:0},
+  {id:'e5',type:'emergency',name:'Ambulance Depot',status:'operational',criticality:9,uptime:99.4,x:0,y:0},
+  {id:'e6',type:'emergency',name:'Emergency Shelter',status:'operational',criticality:7,uptime:98.0,x:0,y:0},
+  {id:'e7',type:'emergency',name:'Backup Command Ctr',status:'operational',criticality:8,uptime:99.1,x:0,y:0},
+];
+
+const EDGES = [
+  // Power internal
+  {s:'p4',t:'p2',type:'direct',weight:5},{s:'p6',t:'p2',type:'direct',weight:3},
+  {s:'p2',t:'p1',type:'direct',weight:4},{s:'p2',t:'p3',type:'direct',weight:4},
+  {s:'p1',t:'p5',type:'direct',weight:3},{s:'p3',t:'p5',type:'direct',weight:3},
+  {s:'p7',t:'p2',type:'direct',weight:2},{s:'p8',t:'p2',type:'direct',weight:4},
+  {s:'p2',t:'p12',type:'critical',weight:5},{s:'p2',t:'p9',type:'direct',weight:3},
+  {s:'p1',t:'p10',type:'direct',weight:2},{s:'p3',t:'p11',type:'direct',weight:2},
+  // Water internal
+  {s:'w1',t:'w2',type:'direct',weight:5},{s:'w2',t:'w3',type:'direct',weight:4},
+  {s:'w3',t:'w5',type:'direct',weight:3},{s:'w3',t:'w4',type:'direct',weight:3},
+  {s:'w2',t:'w6',type:'critical',weight:5},{s:'w5',t:'w7',type:'direct',weight:3},
+  {s:'w4',t:'w8',type:'direct',weight:2},{s:'w9',t:'w2',type:'direct',weight:2},
+  // Power → Water deps
+  {s:'p2',t:'w2',type:'indirect',weight:4},{s:'p5',t:'w4',type:'indirect',weight:3},
+  {s:'p12',t:'w6',type:'critical',weight:5},
+  // Transport internal
+  {s:'t2',t:'t1',type:'direct',weight:4},{s:'t1',t:'t5',type:'critical',weight:5},
+  {s:'t6',t:'t5',type:'critical',weight:5},{s:'t2',t:'t6',type:'direct',weight:4},
+  {s:'t9',t:'t2',type:'direct',weight:3},{s:'t10',t:'t2',type:'direct',weight:3},
+  {s:'t3',t:'t2',type:'direct',weight:3},{s:'t11',t:'t2',type:'direct',weight:2},
+  {s:'t4',t:'t2',type:'direct',weight:2},{s:'t8',t:'t7',type:'direct',weight:2},
+  // Power → Transport
+  {s:'p2',t:'t3',type:'indirect',weight:4},{s:'p5',t:'t11',type:'indirect',weight:3},
+  // Telecom internal
+  {s:'c1',t:'c3',type:'direct',weight:4},{s:'c1',t:'c4',type:'direct',weight:4},
+  {s:'c8',t:'c1',type:'direct',weight:5},{s:'c6',t:'c1',type:'direct',weight:3},
+  {s:'c7',t:'c1',type:'direct',weight:2},{s:'c2',t:'c1',type:'direct',weight:5},
+  {s:'c5',t:'c1',type:'critical',weight:5},
+  // Power → Telecom
+  {s:'p2',t:'c1',type:'indirect',weight:5},{s:'p12',t:'c2',type:'critical',weight:5},
+  // Emergency deps
+  {s:'p12',t:'e1',type:'critical',weight:5},{s:'w6',t:'e1',type:'critical',weight:5},
+  {s:'t5',t:'e1',type:'direct',weight:4},{s:'c2',t:'e4',type:'critical',weight:5},
+  {s:'c2',t:'e3',type:'direct',weight:4},{s:'t6',t:'e2',type:'direct',weight:4},
+  {s:'w7',t:'e2',type:'direct',weight:4},{s:'c4',t:'e5',type:'direct',weight:3},
+  {s:'t6',t:'e5',type:'direct',weight:3},{s:'e4',t:'e7',type:'direct',weight:4},
+];
+
+const activeLayers = new Set(['power','water','transport','telecom','emergency']);
+
+// ═══════════════════════════════════════════════════════════
+// CLOCK
+// ═══════════════════════════════════════════════════════════
+function updateClock(){
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-GB',{hour12:false}) + ' LOCAL';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ═══════════════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════════════
+function switchView(name, btn){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='dash') initDashCharts();
+}
+
+// ═══════════════════════════════════════════════════════════
+// DEPENDENCY MAP (D3 Force Graph)
+// ═══════════════════════════════════════════════════════════
+let simulation, svg_sel, link_sel, node_sel, selectedNode=null;
+
+function initMap(){
+  const container = document.getElementById('dependency-canvas');
+  const rect = container.getBoundingClientRect();
+  const W = rect.width, H = rect.height;
+
+  const svg = d3.select('#dependency-canvas')
+    .attr('width', W).attr('height', H);
+  svg.selectAll('*').remove();
+
+  // Defs
+  const defs = svg.append('defs');
+  defs.append('marker').attr('id','arrowhead')
+    .attr('viewBox','0 0 10 10').attr('refX',16).attr('refY',5)
+    .attr('markerWidth',6).attr('markerHeight',6)
+    .attr('orient','auto')
+    .append('path').attr('d','M 0 0 L 10 5 L 0 10 z')
+    .attr('fill','rgba(255,255,255,0.3)');
+
+  const filtNodes = NODES.filter(n=>activeLayers.has(n.type));
+  const filtEdges = EDGES.filter(e=>{
+    const sn=NODES.find(n=>n.id===e.s), tn=NODES.find(n=>n.id===e.t);
+    return sn&&tn&&activeLayers.has(sn.type)&&activeLayers.has(tn.type);
+  });
+
+  const g = svg.append('g');
+
+  // Zoom
+  svg.call(d3.zoom().scaleExtent([0.3,3]).on('zoom', e=>{
+    g.attr('transform', e.transform);
+  }));
+
+  const linkData = filtEdges.map(e=>({
+    source: filtNodes.find(n=>n.id===e.s),
+    target: filtNodes.find(n=>n.id===e.t),
+    type: e.type, weight: e.weight
+  })).filter(e=>e.source&&e.target);
+
+  link_sel = g.append('g').selectAll('line').data(linkData).join('line')
+    .attr('stroke', d=> d.type==='critical'?'rgba(255,77,109,0.7)':'rgba(100,150,255,0.25)')
+    .attr('stroke-width', d=> d.type==='critical'?2:1)
+    .attr('stroke-dasharray', d=> d.type==='indirect'?'5,4':'none')
+    .attr('marker-end', 'url(#arrowhead)');
+
+  node_sel = g.append('g').selectAll('g').data(filtNodes).join('g')
+    .attr('cursor','pointer')
+    .call(d3.drag()
+      .on('start', (e,d)=>{ if(!e.active)simulation.alphaTarget(0.3).restart(); d.fx=d.x;d.fy=d.y; })
+      .on('drag', (e,d)=>{ d.fx=e.x;d.fy=e.y; })
+      .on('end', (e,d)=>{ if(!e.active)simulation.alphaTarget(0); d.fx=null;d.fy=null; })
+    )
+    .on('click', (e,d)=>{ e.stopPropagation(); selectNode(d, filtEdges); });
+
+  node_sel.append('circle')
+    .attr('r', d=> 6 + d.criticality*1.5)
+    .attr('fill', d=> INFRA[d.type].color+'22')
+    .attr('stroke', d=>{
+      if(d.status==='critical') return '#ff4d6d';
+      if(d.status==='degraded') return '#ffb800';
+      return INFRA[d.type].color;
+    })
+    .attr('stroke-width', d=> d.status==='critical'?2:1.5)
+    .style('filter', d=> d.criticality>=9?`drop-shadow(0 0 6px ${INFRA[d.type].color})`:'none');
+
+  node_sel.append('text')
+    .attr('text-anchor','middle').attr('dy','0.35em')
+    .attr('font-size', d=> 6+d.criticality*0.8)
+    .attr('fill', d=> INFRA[d.type].color)
+    .attr('font-family','Share Tech Mono')
+    .text(d=> d.id.toUpperCase());
+
+  // Labels (show on hover)
+  node_sel.append('title').text(d=>d.name+'\n'+d.type+' | '+d.status);
+
+  simulation = d3.forceSimulation(filtNodes)
+    .force('link', d3.forceLink(linkData).id(d=>d.id).distance(d=>60+d.weight*15))
+    .force('charge', d3.forceManyBody().strength(-200))
+    .force('center', d3.forceCenter(W/2, H/2))
+    .force('collision', d3.forceCollide().radius(d=>12+d.criticality*2))
+    .on('tick', ()=>{
+      link_sel
+        .attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+        .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+      node_sel.attr('transform',d=>`translate(${d.x},${d.y})`);
+    });
+
+  svg.on('click',()=>{ deselectNode(); });
+}
+
+function selectNode(d, filtEdges){
+  selectedNode = d;
+  const deps = filtEdges.filter(e=>e.t===d.id).length;
+  const dependents = filtEdges.filter(e=>e.s===d.id).length;
+  document.getElementById('nd-title').textContent = d.name;
+  document.getElementById('nd-type').textContent = INFRA[d.type].label.toUpperCase();
+  document.getElementById('nd-status').innerHTML = `<span style="color:${
+    d.status==='operational'?'var(--accent4)':d.status==='degraded'?'var(--accent5)':'var(--accent3)'
+  }">${d.status.toUpperCase()}</span>`;
+  document.getElementById('nd-crit').textContent = d.criticality+'/10';
+  document.getElementById('nd-deps').textContent = deps;
+  document.getElementById('nd-dependents').textContent = dependents;
+  document.getElementById('nd-uptime').textContent = d.uptime.toFixed(1)+'%';
+
+  const affectedSectors = [...new Set(
+    filtEdges.filter(e=>e.s===d.id).map(e=>NODES.find(n=>n.id===e.t)?.type).filter(Boolean)
+  )];
+  document.getElementById('nd-sectors').innerHTML = affectedSectors.map(s=>
+    `<span class="tag" style="background:${INFRA[s].color}22;border:1px solid ${INFRA[s].color}44;color:${INFRA[s].color}">${INFRA[s].label}</span>`
+  ).join('') || '—';
+
+  document.getElementById('node-detail').classList.add('visible');
+  document.getElementById('selected-info').innerHTML =
+    `<span style="color:${INFRA[d.type].color}">${d.name}</span><br>
+     <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim)">ID: ${d.id} | CRIT: ${d.criticality}/10</span>`;
+
+  // Highlight
+  node_sel.selectAll('circle').attr('opacity', n=> n.id===d.id?1:0.3);
+  link_sel.attr('opacity', e=> e.source.id===d.id||e.target.id===d.id?1:0.1);
+}
+
+function deselectNode(){
+  selectedNode=null;
+  document.getElementById('node-detail').classList.remove('visible');
+  document.getElementById('selected-info').textContent='Click a node to inspect';
+  node_sel?.selectAll('circle').attr('opacity',1);
+  link_sel?.attr('opacity',1);
+}
+
+function toggleLayer(type, el){
+  if(activeLayers.has(type)) activeLayers.delete(type);
+  else activeLayers.add(type);
+  el.classList.toggle('active-layer');
+  initMap();
+}
+
+function filterStatus(){
+  initMap();
+}
+
+// ═══════════════════════════════════════════════════════════
+// CASCADE ANALYSIS
+// ═══════════════════════════════════════════════════════════
+function initCascade(){
+  const vulnData = [
+    {name:'Power Grid',pct:72,color:'var(--power)'},
+    {name:'Water Supply',pct:58,color:'var(--water)'},
+    {name:'Telecom',pct:81,color:'var(--telecom)'},
+    {name:'Transportation',pct:45,color:'var(--transport)'},
+    {name:'Emergency Svcs',pct:31,color:'var(--emergency)'},
+  ];
+
+  document.getElementById('vuln-bars').innerHTML = vulnData.map(v=>`
+    <div class="risk-item">
+      <div class="risk-row">
+        <span class="risk-name" style="color:${v.color}">${v.name}</span>
+        <span class="risk-pct" style="color:${v.color}">${v.pct}%</span>
+      </div>
+      <div class="risk-bar-bg">
+        <div class="risk-bar-fill" style="background:${v.color};width:${v.pct}%"></div>
+      </div>
+    </div>
+  `).join('');
+
+  // Impact matrix
+  const sectors = ['Power','Water','Transport','Telecom','Emergency'];
+  const matrix = [
+    [100,85,60,90,95], // Power failure impacts
+    [20,100,15,10,80],  // Water failure impacts
+    [5,5,100,10,70],    // Transport failure impacts
+    [60,40,30,100,85],  // Telecom failure impacts
+    [0,0,0,0,100],      // Emergency failure impacts
+  ];
+  function cellColor(val){
+    if(val===100) return 'rgba(255,255,255,0.1)';
+    if(val>=80) return 'rgba(255,77,109,0.5)';
+    if(val>=50) return 'rgba(255,184,0,0.4)';
+    if(val>=20) return 'rgba(30,111,255,0.3)';
+    return 'rgba(0,212,255,0.15)';
+  }
+  const tbl = document.getElementById('impact-matrix-table');
+  tbl.innerHTML = `<tr><th>FROM\\ TO</th>${sectors.map(s=>`<th>${s}</th>`).join('')}</tr>` +
+    matrix.map((row,i)=>`<tr><td style="color:var(--text-bright);font-weight:700">${sectors[i]}</td>` +
+      row.map((val,j)=>`<td><div class="impact-cell" style="background:${cellColor(val)};color:${val>=80?'var(--accent3)':val>=50?'var(--accent5)':'var(--text-dim)'}">
+        ${val===100?'—':val+'%'}</div></td>`).join('')+'</tr>'
+    ).join('');
+
+  // Critical nodes
+  const critNodes = [
+    {rank:1,name:'Central Grid Hub',type:'POWER',score:'9.8',color:'var(--power)'},
+    {rank:2,name:'Core Network Node',type:'TELECOM',score:'9.5',color:'var(--telecom)'},
+    {rank:3,name:'Emergency EOC',type:'EMERGENCY',score:'9.3',color:'var(--emergency)'},
+    {rank:4,name:'Central Hospital',type:'EMERGENCY',score:'9.1',color:'var(--emergency)'},
+    {rank:5,name:'Main Reservoir',type:'WATER',score:'8.9',color:'var(--water)'},
+    {rank:6,name:'Hospital Power Link',type:'POWER',score:'8.7',color:'var(--power)'},
+    {rank:7,name:'Emergency Route A',type:'TRANSPORT',score:'8.4',color:'var(--transport)'},
+    {rank:8,name:'SCADA Control Net',type:'TELECOM',score:'8.2',color:'var(--telecom)'},
+  ];
+  document.getElementById('crit-nodes-list').innerHTML = critNodes.map(n=>`
+    <div class="crit-node">
+      <div class="crit-rank">${n.rank}</div>
+      <div class="crit-info">
+        <div class="crit-name">${n.name}</div>
+        <div class="crit-type">${n.type}</div>
+      </div>
+      <div class="crit-score" style="color:${n.color}">${n.score}</div>
+    </div>
+  `).join('');
+
+  // Timeline chart
+  const ctx = document.getElementById('cascade-chart').getContext('2d');
+  if(window.cascadeChartInst) window.cascadeChartInst.destroy();
+  window.cascadeChartInst = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels:Array.from({length:12},(_,i)=>`T+${i*5}m`),
+      datasets:[
+        {label:'Power',data:[100,80,60,45,40,38,35,34,35,37,42,50],borderColor:'#ffb800',backgroundColor:'rgba(255,184,0,0.05)',fill:true,tension:0.4,borderWidth:2},
+        {label:'Water',data:[100,100,90,72,60,55,52,50,51,53,58,65],borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,0.05)',fill:true,tension:0.4,borderWidth:2},
+        {label:'Telecom',data:[100,95,80,65,55,50,48,47,48,52,60,70],borderColor:'#b44dff',backgroundColor:'rgba(180,77,255,0.05)',fill:true,tension:0.4,borderWidth:2},
+        {label:'Transport',data:[100,100,100,88,75,68,65,64,65,70,78,85],borderColor:'#00ff9d',backgroundColor:'rgba(0,255,157,0.05)',fill:true,tension:0.4,borderWidth:2},
+        {label:'Emergency',data:[100,100,98,85,70,62,58,56,57,62,72,82],borderColor:'#ff4d6d',backgroundColor:'rgba(255,77,109,0.05)',fill:true,tension:0.4,borderWidth:2},
+      ]
+    },
+    options:{
+      animation:false,
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'rgba(200,216,240,0.7)',font:{family:'Share Tech Mono',size:10}}}},
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'rgba(200,216,240,0.5)',font:{family:'Share Tech Mono',size:9}}},
+        y:{min:30,max:100,grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'rgba(200,216,240,0.5)',font:{family:'Share Tech Mono',size:9},callback:v=>v+'%'}},
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCENARIO SIMULATION
+// ═══════════════════════════════════════════════════════════
+let currentScenario = 'power';
+const SCENARIOS = {
+  power: {
+    params:[
+      {name:'FAILURE MAGNITUDE',key:'magnitude',min:10,max:100,val:70},
+      {name:'GRID RESILIENCE',key:'resilience',min:0,max:100,val:60},
+      {name:'BACKUP SYSTEMS',key:'backup',min:0,max:100,val:40},
+    ],
+    affected:34, cascade:4, pop:68, recovery:18,
+    log:['T+00:00 Central Grid Hub failure initiated','T+00:05 North Substation offline - load shedding','T+00:12 Water Pump Station Alpha loses power','T+00:18 Metro Line Alpha suspended','T+00:25 Hospital switches to emergency power','T+00:32 Telecom SCADA system degraded','T+00:45 Emergency EOC activating backup protocols','T+01:10 Cascading failure reaching 34 nodes','T+01:30 Recovery teams dispatched to 7 critical sites']
+  },
+  water: {
+    params:[
+      {name:'PIPE PRESSURE LOSS',key:'pressure',min:0,max:100,val:80},
+      {name:'BACKUP RESERVES',key:'reserves',min:0,max:100,val:30},
+      {name:'REPAIR CAPACITY',key:'repair',min:0,max:100,val:50},
+    ],
+    affected:18,cascade:3,pop:45,recovery:12,
+    log:['T+00:00 Main supply pipe rupture detected','T+00:08 Pump Station Beta offline','T+00:20 Hospital water pressure dropping','T+00:35 Fire hydrant network pressure critical','T+00:50 Emergency water reserves activated','T+01:15 Repair crews deployed','T+01:45 18 nodes impacted across 3 sectors']
+  },
+  transport: {
+    params:[
+      {name:'BLOCKAGE SEVERITY',key:'severity',min:10,max:100,val:65},
+      {name:'ALTERNATE ROUTES',key:'alt',min:0,max:100,val:50},
+      {name:'TRAFFIC DIVERSION',key:'diversion',min:0,max:100,val:40},
+    ],
+    affected:22,cascade:3,pop:52,recovery:8,
+    log:['T+00:00 Central Bridge structural failure','T+00:10 Emergency Route A redirected','T+00:20 Ambulance response time +40%','T+00:30 Hospital Corridor congested','T+00:45 Metro Line Alpha capacity reduced','T+01:00 22 transport-dependent nodes affected']
+  },
+  telecom: {
+    params:[
+      {name:'SIGNAL LOSS',key:'signal',min:10,max:100,val:90},
+      {name:'REDUNDANCY LEVEL',key:'redundancy',min:0,max:100,val:40},
+      {name:'RECOVERY SPEED',key:'speed',min:0,max:100,val:55},
+    ],
+    affected:29,cascade:4,pop:78,recovery:6,
+    log:['T+00:00 Core Network Node failure','T+00:03 SCADA systems lose connectivity','T+00:07 Emergency radio activating','T+00:15 Cell tower grid degraded','T+00:22 Water/Power SCADA blind','T+00:30 EOC switches to satellite comms','T+00:45 29 nodes with degraded coordination']
+  },
+  weather: {
+    params:[
+      {name:'STORM INTENSITY',key:'intensity',min:50,max:100,val:90},
+      {name:'FLOOD LEVEL',key:'flood',min:0,max:100,val:70},
+      {name:'WIND SPEED (km/h)',key:'wind',min:60,max:200,val:140},
+    ],
+    affected:41,cascade:5,pop:89,recovery:48,
+    log:['T+00:00 Category 4 weather event detected','T+00:15 Power grid: 6 substations offline','T+00:20 Flood waters rising - roads blocked','T+00:30 Cell towers down city-wide','T+00:45 Water treatment plant compromised','T+01:00 Airport access road flooded','T+01:30 41 nodes affected - citywide emergency','T+02:00 EOC coordinating mass evacuation','T+03:00 Estimated 48h recovery window']
+  }
+};
+
+function selectScenario(name, el){
+  currentScenario = name;
+  document.querySelectorAll('.scenario-card').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  renderSliders();
+  resetSimStats();
+}
+
+function renderSliders(){
+  const sc = SCENARIOS[currentScenario];
+  document.getElementById('sim-sliders').innerHTML = sc.params.map(p=>`
+    <div class="slider-item">
+      <div class="slider-label">
+        <span class="slider-name">${p.name}</span>
+        <span class="slider-val" id="sv-${p.key}">${p.val}${p.name.includes('km')?' km/h':'%'}</span>
+      </div>
+      <input type="range" min="${p.min}" max="${p.max}" value="${p.val}"
+        oninput="document.getElementById('sv-${p.key}').textContent=this.value+'${p.name.includes('km')?' km/h':'%'}'">
+    </div>
+  `).join('');
+}
+
+function resetSimStats(){
+  ['affected','cascade','pop','recovery'].forEach(id=>document.getElementById('stat-'+id).textContent='0');
+  document.getElementById('sim-log').innerHTML='';
+  clearSimCanvas();
+}
+
+function runSimulation(){
+  const sc = SCENARIOS[currentScenario];
+  let step = 0;
+
+  // Animate stats
+  const targets = {affected:sc.affected,cascade:sc.cascade,pop:sc.pop,recovery:sc.recovery};
+  const ids = {affected:'stat-affected',cascade:'stat-cascade',pop:'stat-pop',recovery:'stat-recovery'};
+  const suffixes = {affected:'',cascade:'',pop:'%',recovery:'h'};
+  Object.keys(targets).forEach(k=>{
+    let cur=0; const target=targets[k];
+    const interval = setInterval(()=>{
+      cur = Math.min(cur+Math.ceil(target/20), target);
+      document.getElementById(ids[k]).textContent = cur+suffixes[k];
+      if(cur>=target) clearInterval(interval);
+    }, 60);
+  });
+
+  // Log
+  const logEl = document.getElementById('sim-log');
+  logEl.innerHTML='';
+  sc.log.forEach((line,i)=>{
+    setTimeout(()=>{
+      const color = line.includes('failure')||line.includes('offline')||line.includes('critical')
+        ?'var(--accent3)':line.includes('Emergency')||line.includes('Recovery')
+        ?'var(--accent5)':'var(--text-dim)';
+      logEl.innerHTML += `<div style="color:${color};margin-bottom:2px;">&gt; ${line}</div>`;
+      logEl.scrollTop=logEl.scrollHeight;
+    }, i*300);
+  });
+
+  drawSimCanvas(sc);
+}
+
+function clearSimCanvas(){
+  const canvas = document.getElementById('sim-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+}
+
+function drawSimCanvas(sc){
+  const canvas = document.getElementById('sim-canvas');
+  const rect = canvas.getBoundingClientRect();
+  canvas.width=rect.width*2; canvas.height=rect.height*2;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(2,2);
+  const W=rect.width, H=rect.height;
+
+  ctx.clearRect(0,0,W,H);
+
+  // Draw nodes in a rough grid
+  const nodeList = NODES.slice(0,35);
+  const cols=7, rows=5;
+  const pw=W/(cols+1), ph=H/(rows+1);
+  const positions = nodeList.map((n,i)=>({
+    n, x:pw*(1+(i%cols)), y:ph*(1+Math.floor(i/cols))
+  }));
+
+  const scColors = {power:'#ffb800',water:'#00d4ff',transport:'#00ff9d',telecom:'#b44dff',emergency:'#ff4d6d'};
+
+  let animFrame=0;
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    animFrame++;
+    const progress = Math.min(animFrame/80,1);
+    const affected = Math.floor(sc.affected*progress);
+
+    positions.forEach(({n,x,y},i)=>{
+      const isAffected = i<affected;
+      const col = isAffected ? '#ff4d6d' : scColors[n.type];
+      ctx.beginPath();
+      ctx.arc(x,y, 4+n.criticality*0.8, 0,Math.PI*2);
+      ctx.fillStyle = col+'33';
+      ctx.strokeStyle = col;
+      ctx.lineWidth = isAffected?2:1;
+      ctx.fill(); ctx.stroke();
+
+      if(isAffected && animFrame%6<3){
+        ctx.beginPath();
+        ctx.arc(x,y, 8+n.criticality, 0,Math.PI*2);
+        ctx.strokeStyle = '#ff4d6d44';
+        ctx.lineWidth=1;
+        ctx.stroke();
+      }
+    });
+
+    // Draw some connections
+    EDGES.slice(0,20).forEach(e=>{
+      const sp = positions.find(p=>p.n.id===e.s);
+      const tp = positions.find(p=>p.n.id===e.t);
+      if(!sp||!tp) return;
+      const si = positions.indexOf(sp), ti = positions.indexOf(tp);
+      const isActive = si<affected&&ti<affected;
+      ctx.beginPath();
+      ctx.moveTo(sp.x,sp.y); ctx.lineTo(tp.x,tp.y);
+      ctx.strokeStyle = isActive?'rgba(255,77,109,0.5)':'rgba(100,150,255,0.15)';
+      ctx.lineWidth = isActive?1.5:0.5;
+      ctx.stroke();
+    });
+
+    if(animFrame<100) requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+}
+
+// ═══════════════════════════════════════════════════════════
+// AI CHAT
+// ═══════════════════════════════════════════════════════════
+const INFRA_CONTEXT = `You are NEXUS AI, an expert urban infrastructure resilience analyst embedded in the City Infrastructure Dependency Mapping Platform.
+
+Current city infrastructure data:
+- 47 monitored nodes across 5 sectors: Power Grid (12), Water Supply (9), Transportation (11), Telecom (8), Emergency Services (7)
+- 93 dependency edges connecting these systems
+- 3 nodes currently critical: Industrial Zone PS (power, 88.4% uptime), SCADA Control Net (telecom, 87.2% uptime), Port Access Road (transport, 91.0%)
+- 3 nodes degraded: South Substation (power, 94.1%), Pump Station Beta (water, 93.2%), Port Access Road (transport, 91%)
+- System resilience index: 94.2%
+- Key dependencies: Power → Water pumps, Power → Telecom SCADA, Telecom → Emergency coordination, Transport → Emergency response
+- Most critical nodes by centrality: Central Grid Hub (10/10), Core Network Node (10/10), Emergency EOC (10/10), Central Hospital (10/10)
+- Cross-sector vulnerability: Telecom failure has 81% cascade risk, Power has 72%
+
+You provide concise, expert analysis to city planners and emergency responders. Be specific, cite actual node names and data from above. Format responses clearly. Keep responses to 3-4 paragraphs max.`;
+
+const STARTER_MSG = `**NEXUS AI online.** I'm monitoring all 47 infrastructure nodes across Metro-A1.
+
+**Current status summary:** Three nodes are in critical condition — the SCADA Control Net (87.2% uptime) is your most urgent concern, as it coordinates both power and water systems. If it fails, you lose visibility across two major sectors simultaneously.
+
+I've flagged 3 high-priority risks for today. What would you like to analyze?`;
+
+function initAI(){
+  const feed = document.getElementById('alert-feed');
+  const alerts = [
+    {sev:'var(--accent3)',title:'SCADA Control Net — Critical',desc:'Uptime dropped to 87.2%. Telecom-dependent systems at risk.',time:'2 min ago'},
+    {sev:'var(--accent3)',title:'Industrial Zone PS — Critical',desc:'Power substation at 88.4%. Downstream water pumps affected.',time:'8 min ago'},
+    {sev:'var(--accent5)',title:'Pump Station Beta — Degraded',desc:'93.2% uptime, linked to hospital water services.',time:'15 min ago'},
+    {sev:'var(--accent5)',title:'South Substation — Degraded',desc:'94.1% uptime, serving residential areas N/S.',time:'22 min ago'},
+    {sev:'var(--accent)',title:'Port Access Road — Degraded',desc:'91.0% uptime, freight impact moderate.',time:'35 min ago'},
+    {sev:'var(--accent4)',title:'System scan complete',desc:'47 nodes checked. 2 critical, 3 degraded, 42 operational.',time:'1 hr ago'},
+  ];
+  feed.innerHTML = alerts.map(a=>`
+    <div class="alert-item">
+      <div class="alert-sev" style="background:${a.sev}"></div>
+      <div class="alert-content">
+        <div class="alert-title">${a.title}</div>
+        <div class="alert-desc">${a.desc}</div>
+        <div class="alert-time">${a.time}</div>
+      </div>
+    </div>
+  `).join('');
+
+  // Initial message
+  const msgs = document.getElementById('chat-messages');
+  msgs.innerHTML='';
+  appendMsg('ai', STARTER_MSG);
+}
+
+function appendMsg(role, text){
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className='msg '+role;
+  div.innerHTML=`
+    <div class="msg-avatar">${role==='ai'?'N':'U'}</div>
+    <div class="msg-bubble">${text.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>')}</div>
+  `;
+  msgs.appendChild(div);
+  msgs.scrollTop=msgs.scrollHeight;
+}
+
+function showTyping(){
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className='msg ai'; div.id='typing-indicator';
+  div.innerHTML=`
+    <div class="msg-avatar">N</div>
+    <div class="msg-bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>
+  `;
+  msgs.appendChild(div);
+  msgs.scrollTop=msgs.scrollHeight;
+}
+
+function removeTyping(){
+  const el = document.getElementById('typing-indicator');
+  if(el) el.remove();
+}
+
+async function sendMessage(){
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if(!text) return;
+  input.value='';
+  appendMsg('user', text);
+  showTyping();
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:1000,
+        system: INFRA_CONTEXT,
+        messages:[{role:'user',content:text}]
+      })
+    });
+    const data = await response.json();
+    removeTyping();
+    const reply = data.content?.map(c=>c.text||'').join('') || 'Unable to get response.';
+    appendMsg('ai', reply);
+  } catch(err){
+    removeTyping();
+    appendMsg('ai','⚠️ AI analyst temporarily unavailable. Please check API connectivity.');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// DASHBOARD CHARTS
+// ═══════════════════════════════════════════════════════════
+let dashChartsInit=false;
+function initDashCharts(){
+  if(dashChartsInit) return;
+  dashChartsInit=true;
+
+  // Status grid
+  const statuses=[
+    {name:'Power Grid',val:'98.7%',color:'#ffb800',status:'NOMINAL'},
+    {name:'Water Supply',val:'95.2%',color:'#00d4ff',status:'NOMINAL'},
+    {name:'Transportation',val:'96.8%',color:'#00ff9d',status:'NOMINAL'},
+    {name:'Telecom',val:'91.4%',color:'#b44dff',status:'DEGRADED'},
+    {name:'Emergency Svcs',val:'99.9%',color:'#ff4d6d',status:'NOMINAL'},
+    {name:'Cross-sector Deps',val:'93.1%',color:'#1e6fff',status:'NOMINAL'},
+  ];
+  document.getElementById('status-grid').innerHTML = statuses.map(s=>`
+    <div class="status-item" style="--item-color:${s.color}">
+      <div class="status-name">${s.name}</div>
+      <div class="status-val" style="color:${s.status==='DEGRADED'?'var(--accent5)':'var(--accent4)'}">${s.val} — ${s.status}</div>
+    </div>
+  `).join('');
+
+  const sharedOpts = {
+    animation:false, responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{labels:{color:'rgba(200,216,240,0.6)',font:{family:'Share Tech Mono',size:9}}}},
+  };
+  const gridOpts = {
+    grid:{color:'rgba(255,255,255,0.05)'},
+    ticks:{color:'rgba(200,216,240,0.5)',font:{family:'Share Tech Mono',size:9}}
+  };
+
+  // Health chart
+  const hctx = document.getElementById('health-chart').getContext('2d');
+  new Chart(hctx,{
+    type:'line',
+    data:{
+      labels:['Mon','Tue','Wed','Thu','Fri','Sat','Sun','Mon','Tue','Wed','Thu','Fri'],
+      datasets:[
+        {label:'Overall',data:[92,91,93,90,88,92,94,93,95,94,96,94],borderColor:'#1e6fff',backgroundColor:'rgba(30,111,255,0.06)',fill:true,tension:0.4,borderWidth:2,pointRadius:3},
+        {label:'Power',data:[94,92,94,91,89,93,95,94,96,95,97,95],borderColor:'#ffb800',fill:false,tension:0.4,borderWidth:1.5,pointRadius:0},
+        {label:'Water',data:[90,90,92,90,87,91,93,92,94,93,95,93],borderColor:'#00d4ff',fill:false,tension:0.4,borderWidth:1.5,pointRadius:0},
+        {label:'Telecom',data:[88,88,90,87,85,88,90,89,91,90,92,91],borderColor:'#b44dff',fill:false,tension:0.4,borderWidth:1.5,pointRadius:0},
+      ]
+    },
+    options:{...sharedOpts,scales:{x:gridOpts,y:{...gridOpts,min:80,max:100,ticks:{...gridOpts.ticks,callback:v=>v+'%'}}}}
+  });
+
+  // Radar chart
+  const rctx = document.getElementById('radar-chart').getContext('2d');
+  new Chart(rctx,{
+    type:'radar',
+    data:{
+      labels:['Redundancy','Recovery','Connectivity','Criticality Mgmt','Cross-sector Resilience','Uptime'],
+      datasets:[
+        {label:'Power Grid',data:[85,70,90,80,75,98],borderColor:'#ffb800',backgroundColor:'rgba(255,184,0,0.08)',borderWidth:2},
+        {label:'Water Supply',data:[70,80,75,85,80,95],borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,0.06)',borderWidth:2},
+        {label:'Telecom',data:[90,60,95,70,65,91],borderColor:'#b44dff',backgroundColor:'rgba(180,77,255,0.06)',borderWidth:2},
+        {label:'Emergency',data:[80,90,80,95,90,99],borderColor:'#ff4d6d',backgroundColor:'rgba(255,77,109,0.06)',borderWidth:2},
+      ]
+    },
+    options:{
+      ...sharedOpts,
+      scales:{r:{grid:{color:'rgba(255,255,255,0.06)'},pointLabels:{color:'rgba(200,216,240,0.7)',font:{family:'Share Tech Mono',size:8}},ticks:{display:false}}}
+    }
+  });
+
+  // Dep link chart
+  const dctx = document.getElementById('dep-chart').getContext('2d');
+  new Chart(dctx,{
+    type:'bar',
+    data:{
+      labels:['Power→Water','Power→Telecom','Telecom→Emergency','Transport→Emergency','Water→Emergency','Power→Transport','Telecom→SCADA'],
+      datasets:[
+        {label:'Link Health %',data:[92,88,95,90,96,84,78],
+         backgroundColor:['rgba(255,184,0,0.5)','rgba(255,184,0,0.5)','rgba(180,77,255,0.5)','rgba(0,255,157,0.5)','rgba(0,212,255,0.5)','rgba(0,255,157,0.5)','rgba(180,77,255,0.5)'],
+         borderColor:['#ffb800','#ffb800','#b44dff','#00ff9d','#00d4ff','#00ff9d','#b44dff'],
+         borderWidth:1, borderRadius:2}
+      ]
+    },
+    options:{...sharedOpts,indexAxis:'y',scales:{
+      x:{...gridOpts,min:60,max:100,ticks:{...gridOpts.ticks,callback:v=>v+'%'}},
+      y:gridOpts
+    }}
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// CHART.JS LOAD & INIT
+// ═══════════════════════════════════════════════════════════
+const chartScript = document.createElement('script');
+chartScript.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+chartScript.onload=()=>{
+  // Init all views
+  initMap();
+  initCascade();
+  initAI();
+  renderSliders();
+
+  // Resize handler
+  window.addEventListener('resize', ()=>{
+    const canvas=document.getElementById('dependency-canvas');
+    if(canvas&&document.getElementById('view-map').classList.contains('active')) initMap();
+  });
+};
+document.head.appendChild(chartScript);
+</script>
+</body>
+</html>

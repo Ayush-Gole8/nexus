@@ -1,0 +1,344 @@
+/* stylelint-disable */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+@import '@xyflow/react/dist/style.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════
+   NEXUS — OPERATIONS AMBER THEME TOKENS
+   ═══════════════════════════════════════ */
+:root {
+  /* Backgrounds — warm stone, NOT blue-black */
+  --bg-void:        #0a0907;
+  --bg-base:        #100f0c;
+  --bg-surface:     #181611;
+  --bg-elevated:    #201e18;
+  --bg-overlay:     #2a2720;
+
+  /* Amber primary accent */
+  --amber-dim:      #7a5c1e;
+  --amber-mid:      #c8870a;
+  --amber:          #f0a500;
+  --amber-bright:   #ffc53d;
+  --amber-glow:     rgba(240, 165, 0, 0.18);
+  --amber-glow-lg:  rgba(240, 165, 0, 0.06);
+
+  /* Text — warm stone tones */
+  --text-primary:   #f0ece4;
+  --text-secondary: #a89f8c;
+  --text-muted:     #5c5649;
+  --text-inverse:   #0a0907;
+
+  /* Borders — amber-tinted */
+  --border-hairline: rgba(240, 165, 0, 0.08);
+  --border-subtle:   rgba(240, 165, 0, 0.14);
+  --border-default:  rgba(240, 165, 0, 0.22);
+  --border-focus:    rgba(240, 165, 0, 0.55);
+
+  /* Sector colors */
+  --sector-power:           #ffe234;
+  --sector-power-dim:       rgba(255, 226, 52, 0.15);
+  --sector-power-glow:      rgba(255, 226, 52, 0.35);
+  --sector-water:           #00d4b8;
+  --sector-water-dim:       rgba(0, 212, 184, 0.12);
+  --sector-water-glow:      rgba(0, 212, 184, 0.35);
+  --sector-transport:       #ff6b2b;
+  --sector-transport-dim:   rgba(255, 107, 43, 0.12);
+  --sector-transport-glow:  rgba(255, 107, 43, 0.35);
+  --sector-telecom:         #7b68ff;
+  --sector-telecom-dim:     rgba(123, 104, 255, 0.12);
+  --sector-telecom-glow:    rgba(123, 104, 255, 0.35);
+  --sector-emergency:       #ff3355;
+  --sector-emergency-dim:   rgba(255, 51, 85, 0.12);
+  --sector-emergency-glow:  rgba(255, 51, 85, 0.35);
+
+  /* Status */
+  --status-operational: #22d97a;
+  --status-degraded:    #f0a500;
+  --status-failed:      #ff3355;
+  --status-op-dim:      rgba(34, 217, 122, 0.14);
+  --status-deg-dim:     rgba(240, 165, 0, 0.14);
+  --status-fail-dim:    rgba(255, 51, 85, 0.14);
+
+  /* Typography */
+  --font-display: 'Syne', 'DM Sans', sans-serif;
+  --font-data:    'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Shadows */
+  --shadow-card:  0 2px 8px rgba(0,0,0,0.6), 0 0 0 1px var(--border-hairline);
+  --shadow-amber: 0 0 20px var(--amber-glow), 0 0 60px var(--amber-glow-lg);
+  --shadow-focus: 0 0 0 2px var(--border-focus);
+
+  /* Transitions */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast:   120ms var(--ease-out);
+  --t-med:    220ms var(--ease-out);
+
+  /* Legacy sector color aliases (used by JS) */
+  --color-power:     #ffe234;
+  --color-water:     #00d4b8;
+  --color-transport: #ff6b2b;
+  --color-telecom:   #7b68ff;
+  --color-emergency: #ff3355;
+}
+
+/* ═══════════════════════════════════════
+   GLOBAL RESET & BASE
+   ═══════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { font-size: 14px; -webkit-font-smoothing: antialiased; }
+
+body {
+  margin: 0;
+  font-family: var(--font-display);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+/* Amber scanline texture */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(240, 165, 0, 0.018) 3px,
+    rgba(240, 165, 0, 0.018) 4px
+  );
+}
+
+#root {
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg-surface); }
+::-webkit-scrollbar-thumb { background: var(--amber-dim); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--amber-mid); }
+
+/* ═══════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════ */
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 51, 85, 0.6); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 51, 85, 0); }
+}
+.animate-cascade { animation: pulse-red 1s ease-in-out infinite; }
+
+@keyframes pulse-ring {
+  0%   { opacity: 1; transform: scale(0.8); }
+  70%  { opacity: 0; transform: scale(2.2); }
+  100% { opacity: 0; transform: scale(2.2); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: fade-up 0.4s var(--ease-out) both; }
+
+/* ═══════════════════════════════════════
+   AMBER THEME COMPONENT UTILITIES
+   ═══════════════════════════════════════ */
+.nexus-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--t-med);
+}
+.nexus-card:hover { border-color: var(--border-subtle); }
+.nexus-card::before {
+  content: '';
+  position: absolute; top: 0; left: 16px; right: 16px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--amber-mid), transparent);
+  opacity: 0.4;
+}
+
+.nexus-card-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+.page-title::after {
+  content: '';
+  display: block;
+  width: 28px; height: 2px;
+  background: var(--amber);
+  margin-top: 5px;
+}
+.page-subtitle {
+  font-family: var(--font-data);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  margin-top: 8px;
+}
+
+/* Status dots */
+.status-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+}
+.status-dot.operational { background: var(--status-operational); }
+.status-dot.degraded    { background: var(--status-degraded); }
+.status-dot.failed      { background: var(--status-failed); }
+.status-dot.degraded::after,
+.status-dot.failed::after {
+  content: '';
+  position: absolute; inset: -3px;
+  border-radius: 50%;
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+.status-dot.degraded::after { border: 1px solid var(--status-degraded); }
+.status-dot.failed::after   { border: 1px solid var(--status-failed); }
+
+/* Sector badges */
+.sector-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 7px; border-radius: 3px;
+  font-family: var(--font-data); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase;
+}
+.sector-badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.sector-badge.power     { background: var(--sector-power-dim);     color: var(--sector-power);     border: 1px solid rgba(255,226,52,0.25); }
+.sector-badge.power::before     { background: var(--sector-power); }
+.sector-badge.water     { background: var(--sector-water-dim);     color: var(--sector-water);     border: 1px solid rgba(0,212,184,0.25); }
+.sector-badge.water::before     { background: var(--sector-water); }
+.sector-badge.transport { background: var(--sector-transport-dim); color: var(--sector-transport); border: 1px solid rgba(255,107,43,0.25); }
+.sector-badge.transport::before { background: var(--sector-transport); }
+.sector-badge.telecom   { background: var(--sector-telecom-dim);   color: var(--sector-telecom);   border: 1px solid rgba(123,104,255,0.25); }
+.sector-badge.telecom::before   { background: var(--sector-telecom); }
+.sector-badge.emergency { background: var(--sector-emergency-dim); color: var(--sector-emergency); border: 1px solid rgba(255,51,85,0.25); }
+.sector-badge.emergency::before { background: var(--sector-emergency); }
+
+/* Buttons */
+.btn-amber {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-radius: 4px;
+  font-family: var(--font-data); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  cursor: pointer; transition: all var(--t-fast);
+  background: var(--amber); color: var(--text-inverse); border: none;
+}
+.btn-amber:hover { background: var(--amber-bright); box-shadow: var(--shadow-amber); }
+
+.btn-outline-amber {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 16px; border-radius: 4px;
+  font-family: var(--font-data); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  cursor: pointer; transition: all var(--t-fast);
+  background: transparent; color: var(--amber);
+  border: 1px solid var(--border-default);
+}
+.btn-outline-amber:hover { background: var(--amber-glow); border-color: var(--border-focus); }
+
+/* View toggle */
+.view-toggle { display: inline-flex; border: 1px solid var(--border-default); border-radius: 4px; overflow: hidden; background: var(--bg-void); }
+.view-toggle-btn { padding: 5px 14px; font-family: var(--font-data); font-size: 9px; font-weight: 600; letter-spacing: 0.10em; text-transform: uppercase; color: var(--text-muted); cursor: pointer; border: none; background: transparent; transition: all 120ms var(--ease-out); }
+.view-toggle-btn.active { background: var(--amber); color: var(--text-inverse); }
+.view-toggle-btn:not(.active):hover { color: var(--text-primary); background: var(--bg-overlay); }
+
+/* ═══════════════════════════════════════
+   REACT FLOW OVERRIDES
+   ═══════════════════════════════════════ */
+.react-flow__background { background: var(--bg-void) !important; }
+.react-flow__edge-path { filter: drop-shadow(0 0 2px rgba(240, 165, 0, 0.15)); }
+.react-flow__minimap { background: var(--bg-surface) !important; border: 1px solid var(--border-hairline) !important; border-radius: 6px; }
+.react-flow__controls { background: var(--bg-surface) !important; border: 1px solid var(--border-default) !important; border-radius: 6px; }
+.react-flow__controls-button { background: var(--bg-surface) !important; border-color: var(--border-hairline) !important; color: var(--text-secondary) !important; }
+.react-flow__controls-button:hover { background: var(--bg-elevated) !important; color: var(--amber) !important; }
+
+/* ═══════════════════════════════════════
+   3D NODE CARDS (React Flow graph nodes)
+   ═══════════════════════════════════════ */
+.node-3d {
+  position: relative;
+  min-width: 180px;
+  border-radius: 8px;
+  border: 1px solid var(--node-color-20, var(--border-default));
+  border-left: 3px solid var(--node-color, var(--amber));
+  background: var(--bg-surface);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 20px -5px var(--node-color-20, var(--amber-glow));
+  transition: all 0.25s var(--ease-out);
+  overflow: visible;
+}
+
+.node-3d::before {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(240,165,0,0.03) 0%, transparent 50%);
+  pointer-events: none; z-index: 1;
+}
+
+.node-3d:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 32px -4px var(--node-color-40, var(--amber-glow));
+  border-color: var(--node-color-40, var(--border-default));
+}
+
+.node-3d-selected {
+  border-color: var(--amber-bright) !important;
+  box-shadow: 0 0 0 2px var(--amber-glow), 0 0 32px -4px var(--amber-glow) !important;
+}
+
+.node-3d-header {
+  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.node-3d-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  border-radius: 6px; flex-shrink: 0;
+  border: 1px solid var(--border-hairline);
+}
+
+/* Bottom platform shadow */
+.node-3d::after {
+  content: '';
+  position: absolute;
+  bottom: -2px; left: 6px; right: 6px; height: 4px;
+  border-radius: 0 0 8px 8px;
+  background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.4));
+  pointer-events: none; filter: blur(2px);
+}
+
+/* Sector node accent colors — updated to amber theme sector palette */
+.node-3d[data-sector="power"]     { --node-color: var(--sector-power);     --node-color-20: rgba(255,226,52,0.2);  --node-color-40: rgba(255,226,52,0.4); }
+.node-3d[data-sector="water"]     { --node-color: var(--sector-water);     --node-color-20: rgba(0,212,184,0.2);  --node-color-40: rgba(0,212,184,0.4); }
+.node-3d[data-sector="transport"] { --node-color: var(--sector-transport); --node-color-20: rgba(255,107,43,0.2); --node-color-40: rgba(255,107,43,0.4); }
+.node-3d[data-sector="telecom"]   { --node-color: var(--sector-telecom);   --node-color-20: rgba(123,104,255,0.2);--node-color-40: rgba(123,104,255,0.4); }
+.node-3d[data-sector="emergency"] { --node-color: var(--sector-emergency); --node-color-20: rgba(255,51,85,0.2);  --node-color-40: rgba(255,51,85,0.4); }
+
+@keyframes emergency-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 51, 85, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 51, 85, 0); }
+}

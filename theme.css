@@ -1,0 +1,1133 @@
+/* ============================================================
+   NEXUS — SMART INFRASTRUCTURE MONITOR
+   Theme: "OPERATIONS AMBER"
+   
+   Aesthetic direction: Military-grade ops room meets precision
+   engineering. Think ISRO mission control crossed with Bloomberg
+   terminal. Deep charcoal-stone base, warm amber as the dominant
+   accent (not blue — everyone uses blue), sector colors that feel
+   like physical utility markings, nodes that GLOW and PULSE.
+   
+   Font stack: "Syne" (display/labels) + "JetBrains Mono" (data)
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+
+/* ──────────────────────────────────────────────
+   ROOT TOKENS
+   ────────────────────────────────────────────── */
+:root {
+
+  /* ── Background layers (warm stone, NOT blue-black) */
+  --bg-void:        #0a0907;   /* deepest: outside cards          */
+  --bg-base:        #100f0c;   /* page background                 */
+  --bg-surface:     #181611;   /* card / panel backgrounds        */
+  --bg-elevated:    #201e18;   /* hovered card, modal             */
+  --bg-overlay:     #2a2720;   /* tooltip, dropdown               */
+
+  /* ── Amber primary accent — the soul of the theme */
+  --amber-dim:      #7a5c1e;   /* subtle: disabled, muted         */
+  --amber-mid:      #c8870a;   /* secondary emphasis              */
+  --amber:          #f0a500;   /* PRIMARY accent — use freely     */
+  --amber-bright:   #ffc53d;   /* hover, active, highlight        */
+  --amber-glow:     rgba(240, 165, 0, 0.18);
+  --amber-glow-lg:  rgba(240, 165, 0, 0.06);
+
+  /* ── Text */
+  --text-primary:   #f0ece4;   /* main readable text              */
+  --text-secondary: #a89f8c;   /* labels, metadata                */
+  --text-muted:     #5c5649;   /* placeholders, dividers          */
+  --text-inverse:   #0a0907;   /* text on amber buttons           */
+
+  /* ── Borders */
+  --border-hairline: rgba(240, 165, 0, 0.08);
+  --border-subtle:   rgba(240, 165, 0, 0.14);
+  --border-default:  rgba(240, 165, 0, 0.22);
+  --border-focus:    rgba(240, 165, 0, 0.55);
+
+  /* ── Sector colors — high contrast, utility-inspired, distinct */
+
+  /* POWER — Electric yellow. Bright, energetic. Not amber (too close). */
+  --sector-power:        #ffe234;
+  --sector-power-dim:    rgba(255, 226, 52, 0.15);
+  --sector-power-glow:   rgba(255, 226, 52, 0.35);
+  --sector-power-node:   #ffe234;
+
+  /* WATER — Glacier teal. Cold, clean, distinct from power. */
+  --sector-water:        #00d4b8;
+  --sector-water-dim:    rgba(0, 212, 184, 0.12);
+  --sector-water-glow:   rgba(0, 212, 184, 0.35);
+  --sector-water-node:   #00d4b8;
+
+  /* TRANSPORT — Signal orange. Road-marking orange. NOT amber. */
+  --sector-transport:    #ff6b2b;
+  --sector-transport-dim:rgba(255, 107, 43, 0.12);
+  --sector-transport-glow:rgba(255, 107, 43, 0.35);
+  --sector-transport-node:#ff6b2b;
+
+  /* TELECOM — Violet-blue. Digital, data, frequency. */
+  --sector-telecom:      #7b68ff;
+  --sector-telecom-dim:  rgba(123, 104, 255, 0.12);
+  --sector-telecom-glow: rgba(123, 104, 255, 0.35);
+  --sector-telecom-node: #7b68ff;
+
+  /* EMERGENCY — Hot red. Urgency. Maximum contrast on dark bg. */
+  --sector-emergency:    #ff3355;
+  --sector-emergency-dim:rgba(255, 51, 85, 0.12);
+  --sector-emergency-glow:rgba(255, 51, 85, 0.35);
+  --sector-emergency-node:#ff3355;
+
+  /* ── Status colors */
+  --status-operational: #22d97a;
+  --status-degraded:    #f0a500;   /* amber = degraded (thematic) */
+  --status-failed:      #ff3355;
+  --status-unknown:     #5c5649;
+
+  --status-op-dim:   rgba(34, 217, 122, 0.14);
+  --status-deg-dim:  rgba(240, 165, 0, 0.14);
+  --status-fail-dim: rgba(255, 51, 85, 0.14);
+
+  /* ── Typography */
+  --font-display: 'Syne', 'DM Sans', sans-serif;
+  --font-data:    'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ── Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ── Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* ── Shadows */
+  --shadow-card:   0 2px 8px rgba(0,0,0,0.6), 0 0 0 1px var(--border-hairline);
+  --shadow-focus:  0 0 0 2px var(--border-focus);
+  --shadow-amber:  0 0 20px var(--amber-glow), 0 0 60px var(--amber-glow-lg);
+
+  /* ── Transitions */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast:   120ms var(--ease-out);
+  --t-med:    220ms var(--ease-out);
+  --t-slow:   400ms var(--ease-out);
+
+  /* ── Sidebar */
+  --sidebar-width: 160px;
+}
+
+
+/* ──────────────────────────────────────────────
+   GLOBAL RESET
+   ────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 14px; -webkit-font-smoothing: antialiased; }
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  line-height: 1.5;
+}
+
+/* Subtle amber-tinted scanline texture on body */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(240, 165, 0, 0.018) 3px,
+    rgba(240, 165, 0, 0.018) 4px
+  );
+}
+
+
+/* ──────────────────────────────────────────────
+   SCROLLBAR
+   ────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg-surface); }
+::-webkit-scrollbar-thumb { background: var(--amber-dim); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--amber-mid); }
+
+
+/* ──────────────────────────────────────────────
+   LAYOUT
+   ────────────────────────────────────────────── */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-rows: 100vh;
+  overflow: hidden;
+}
+
+.main-content {
+  overflow-y: auto;
+  padding: var(--space-5);
+  background: var(--bg-base);
+  position: relative;
+}
+
+
+/* ──────────────────────────────────────────────
+   SIDEBAR
+   ────────────────────────────────────────────── */
+.sidebar {
+  background: var(--bg-void);
+  border-right: 1px solid var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle amber left stripe on sidebar */
+.sidebar::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0; width: 2px;
+  background: linear-gradient(180deg, transparent, var(--amber) 40%, transparent);
+  opacity: 0.4;
+}
+
+.sidebar-logo {
+  padding: var(--space-3) var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+  margin-bottom: var(--space-3);
+}
+
+.sidebar-logo .wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.sidebar-logo .sub {
+  font-family: var(--font-data);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--t-fast), background var(--t-fast);
+  border-left: 2px solid transparent;
+  text-decoration: none;
+  position: relative;
+}
+
+.nav-item:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+}
+
+.nav-item.active {
+  color: var(--amber-bright);
+  background: var(--amber-glow);
+  border-left-color: var(--amber);
+}
+
+.nav-item .nav-icon {
+  width: 14px; height: 14px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.nav-item.active .nav-icon { opacity: 1; }
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.user-avatar {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--amber-glow);
+  border: 1px solid var(--amber-mid);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--amber);
+  font-family: var(--font-data);
+}
+
+.user-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.user-role {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+
+/* ──────────────────────────────────────────────
+   PAGE HEADER
+   ────────────────────────────────────────────── */
+.page-header {
+  margin-bottom: var(--space-5);
+}
+
+.page-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+/* Amber underline accent on title */
+.page-title::after {
+  content: '';
+  display: block;
+  width: 32px;
+  height: 2px;
+  background: var(--amber);
+  margin-top: 6px;
+}
+
+.page-subtitle {
+  font-family: var(--font-data);
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  margin-top: 10px;
+}
+
+
+/* ──────────────────────────────────────────────
+   CARDS
+   ────────────────────────────────────────────── */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--t-med), box-shadow var(--t-med);
+}
+
+.card:hover {
+  border-color: var(--border-subtle);
+}
+
+/* Top amber rule on all cards */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: var(--space-4); right: var(--space-4);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--amber-mid), transparent);
+  opacity: 0.5;
+}
+
+.card-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-3);
+}
+
+
+/* ──────────────────────────────────────────────
+   KPI / STAT CARDS
+   ────────────────────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.kpi-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--t-med);
+}
+
+.kpi-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+
+.kpi-card.kpi-default::after  { background: var(--amber); }
+.kpi-card.kpi-blue::after     { background: var(--sector-telecom); }
+.kpi-card.kpi-success::after  { background: var(--status-operational); }
+.kpi-card.kpi-danger::after   { background: var(--status-failed); }
+
+.kpi-label {
+  font-family: var(--font-data);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.kpi-value {
+  font-family: var(--font-data);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.kpi-card.kpi-default  .kpi-value { color: var(--amber); }
+.kpi-card.kpi-blue     .kpi-value { color: var(--sector-telecom); }
+.kpi-card.kpi-success  .kpi-value { color: var(--status-operational); }
+.kpi-card.kpi-danger   .kpi-value { color: var(--status-failed); }
+
+.kpi-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: var(--space-2);
+}
+
+/* Icon in top-right corner of KPI */
+.kpi-icon {
+  position: absolute;
+  top: var(--space-4); right: var(--space-4);
+  width: 32px; height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  opacity: 0.35;
+}
+
+
+/* ──────────────────────────────────────────────
+   SECTOR BADGE / PILL
+   ────────────────────────────────────────────── */
+.sector-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-family: var(--font-data);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+
+.sector-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sector-badge.power     { background: var(--sector-power-dim);     color: var(--sector-power);     border: 1px solid rgba(255,226,52,0.3); }
+.sector-badge.power::before     { background: var(--sector-power); }
+.sector-badge.water     { background: var(--sector-water-dim);     color: var(--sector-water);     border: 1px solid rgba(0,212,184,0.3); }
+.sector-badge.water::before     { background: var(--sector-water); }
+.sector-badge.transport { background: var(--sector-transport-dim); color: var(--sector-transport); border: 1px solid rgba(255,107,43,0.3); }
+.sector-badge.transport::before { background: var(--sector-transport); }
+.sector-badge.telecom   { background: var(--sector-telecom-dim);   color: var(--sector-telecom);   border: 1px solid rgba(123,104,255,0.3); }
+.sector-badge.telecom::before   { background: var(--sector-telecom); }
+.sector-badge.emergency { background: var(--sector-emergency-dim); color: var(--sector-emergency); border: 1px solid rgba(255,51,85,0.3); }
+.sector-badge.emergency::before { background: var(--sector-emergency); }
+
+
+/* ──────────────────────────────────────────────
+   STATUS INDICATOR
+   ────────────────────────────────────────────── */
+.status-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.status-dot.operational { background: var(--status-operational); }
+.status-dot.degraded    { background: var(--status-degraded); }
+.status-dot.failed      { background: var(--status-failed); }
+
+/* Pulse ring for degraded/failed */
+.status-dot.degraded::after,
+.status-dot.failed::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+
+.status-dot.degraded::after { border: 1px solid var(--status-degraded); }
+.status-dot.failed::after   { border: 1px solid var(--status-failed); }
+
+@keyframes pulse-ring {
+  0%   { opacity: 1; transform: scale(0.8); }
+  70%  { opacity: 0; transform: scale(2.2); }
+  100% { opacity: 0; transform: scale(2.2); }
+}
+
+/* Chip form of status */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-family: var(--font-data);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+
+.status-chip.operational { background: var(--status-op-dim);   color: var(--status-operational); }
+.status-chip.degraded    { background: var(--status-deg-dim);  color: var(--status-degraded); }
+.status-chip.failed      { background: var(--status-fail-dim); color: var(--status-failed); }
+
+
+/* ──────────────────────────────────────────────
+   DATA TABLE
+   ────────────────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.data-table thead tr {
+  border-bottom: 1px solid var(--border-default);
+}
+
+.data-table th {
+  font-family: var(--font-data);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-hairline);
+  vertical-align: middle;
+}
+
+.data-table tbody tr {
+  transition: background var(--t-fast);
+}
+
+.data-table tbody tr:hover td {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.data-table .row-number {
+  font-family: var(--font-data);
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 24px;
+}
+
+.data-table .node-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.data-table .score-value {
+  font-family: var(--font-data);
+  font-weight: 600;
+  color: var(--amber-bright);
+}
+
+.data-table .mono {
+  font-family: var(--font-data);
+  font-size: 11px;
+}
+
+
+/* ──────────────────────────────────────────────
+   BAR CHART (Nodes by Sector)
+   ────────────────────────────────────────────── */
+.bar-chart-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.bar-chart-label {
+  font-family: var(--font-data);
+  font-size: 10px;
+  color: var(--text-secondary);
+  width: 100px;
+  text-align: right;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.bar-track {
+  flex: 1;
+  height: 14px;
+  background: var(--bg-overlay);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  position: relative;
+  transition: width 0.6s var(--ease-out);
+}
+
+/* Shimmer on bar */
+.bar-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 60%, rgba(255,255,255,0.12) 80%, transparent);
+}
+
+.bar-fill.power     { background: var(--sector-power); }
+.bar-fill.water     { background: var(--sector-water); }
+.bar-fill.transport { background: var(--sector-transport); }
+.bar-fill.telecom   { background: var(--sector-telecom); }
+.bar-fill.emergency { background: var(--sector-emergency); }
+
+.bar-count {
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+
+/* ──────────────────────────────────────────────
+   VULNERABILITY / PROGRESS BARS
+   ────────────────────────────────────────────── */
+.vuln-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.vuln-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.vuln-track {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-overlay);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.vuln-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+/* Vulnerability uses threat-level gradient */
+.vuln-fill {
+  background: linear-gradient(90deg, var(--status-operational) 0%, var(--amber) 50%, var(--status-failed) 100%);
+  /* Width set inline. The CSS clip creates the threshold effect. */
+}
+
+.vuln-pct {
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 600;
+  width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Color-code pct by severity */
+.vuln-pct.low    { color: var(--status-operational); }
+.vuln-pct.medium { color: var(--amber); }
+.vuln-pct.high   { color: var(--status-failed); }
+
+
+/* ──────────────────────────────────────────────
+   BUTTONS
+   ────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  border: 1px solid transparent;
+}
+
+.btn-primary {
+  background: var(--amber);
+  color: var(--text-inverse);
+  border-color: var(--amber);
+}
+
+.btn-primary:hover {
+  background: var(--amber-bright);
+  box-shadow: var(--shadow-amber);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--amber);
+  border-color: var(--border-default);
+}
+
+.btn-secondary:hover {
+  background: var(--amber-glow);
+  border-color: var(--border-focus);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+
+/* ──────────────────────────────────────────────
+   NETWORK MAP OVERRIDES
+   3D Map canvas wrapper + legend
+   ────────────────────────────────────────────── */
+.map-wrapper {
+  position: relative;
+  background: #070608;   /* near-black with faint violet undertone */
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+}
+
+/* Vignette fade on map edges */
+.map-wrapper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, #070608 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.map-legend {
+  position: absolute;
+  top: var(--space-3); left: var(--space-4);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  background: rgba(7, 6, 8, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+}
+
+.map-legend-label {
+  font-family: var(--font-data);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-right: var(--space-1);
+}
+
+.map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-data);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.map-legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.map-node-counter {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-4);
+  z-index: 2;
+  font-family: var(--font-data);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  background: rgba(7, 6, 8, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+}
+
+/* ──
+   NODE RENDERING GUIDELINES for Three.js / Mapbox GL / D3
+   Pass these into your rendering code as constants.
+   ── */
+
+/*
+  NODE SIZES (sphere radius in scene units):
+    power_plant      → 6.0
+    substation       → 4.5
+    transmission     → 4.0
+    distribution     → 3.5
+    treatment_plant  → 5.0
+    pump_station     → 3.5
+    storage          → 3.0
+    highway          → 3.5
+    bridge           → 3.5
+    transit_hub      → 4.5
+    airport          → 5.5
+    port             → 4.5
+    metro            → 3.0
+    data_center      → 4.5
+    exchange         → 3.5
+    fiber_node       → 3.0
+    cell_tower       → 2.5
+    submarine_cable  → 5.0
+    hospital         → 5.0
+    fire_station     → 3.5
+    police_station   → 3.5
+    eoc              → 5.0
+    dispatch         → 4.0
+    rescue_unit      → 3.5
+    shelter          → 3.0
+    coast_guard      → 3.5
+
+  NODE COLORS (use var color above):
+    power     → #ffe234    emissive intensity: 0.9
+    water     → #00d4b8    emissive intensity: 0.9
+    transport → #ff6b2b    emissive intensity: 0.9
+    telecom   → #7b68ff    emissive intensity: 0.9
+    emergency → #ff3355    emissive intensity: 0.9
+
+  NODE GLOW (point light attached to critical nodes, criticalityScore > 85):
+    color = sector color
+    intensity = 0.4 + (criticalityScore - 85) * 0.03
+    distance = 15
+
+  STATUS VISUAL OVERRIDE:
+    operational → full color
+    degraded    → color + amber pulsing outline (ring anim, 1.8s)
+    failed      → desaturated grey + red ring anim
+
+  EDGE (dependency line) COLORS:
+    power_supply    → #ffe234  opacity: 0.35  linewidth: 1px
+    water_supply    → #00d4b8  opacity: 0.30  linewidth: 1px
+    physical_access → #ff6b2b  opacity: 0.25  linewidth: 0.8px
+    data_link       → #7b68ff  opacity: 0.30  linewidth: 0.8px
+    operational     → #ff3355  opacity: 0.28  linewidth: 0.8px
+
+  EDGE STRENGTH MULTIPLIER: opacity = base × strength
+  High-strength edges (>0.9) should be slightly brighter and thicker.
+
+  MAP BACKGROUND:
+    canvas bg    → #070608
+    land fill    → #0e0d12  (very dark, slight purple)
+    water fill   → #050a0f  (near-black blue)
+    border lines → #1a1820  (barely visible outlines)
+    text labels  → #6b6880  (muted lavender-grey)
+*/
+
+
+/* ──────────────────────────────────────────────
+   TOGGLE BUTTONS (3D Map / Graph switch)
+   ────────────────────────────────────────────── */
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-void);
+}
+
+.view-toggle-btn {
+  padding: 5px 14px;
+  font-family: var(--font-data);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--t-fast);
+  border: none;
+  background: transparent;
+}
+
+.view-toggle-btn.active {
+  background: var(--amber);
+  color: var(--text-inverse);
+}
+
+.view-toggle-btn:not(.active):hover {
+  color: var(--text-primary);
+  background: var(--bg-overlay);
+}
+
+
+/* ──────────────────────────────────────────────
+   SELECT / DROPDOWN
+   ────────────────────────────────────────────── */
+select, .select {
+  appearance: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-data);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 5px 28px 5px 10px;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235c5649'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+select:hover, .select:hover {
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+
+/* ──────────────────────────────────────────────
+   DONUT CHART (Status Distribution)
+   ────────────────────────────────────────────── */
+.donut-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+}
+
+.donut-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+}
+
+.donut-legend-swatch {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+}
+
+.donut-center-label {
+  font-family: var(--font-data);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.donut-center-value {
+  font-family: var(--font-data);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+
+/* ──────────────────────────────────────────────
+   ALERT / NOTIFICATION
+   ────────────────────────────────────────────── */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border-left: 3px solid;
+  font-size: 12px;
+}
+
+.alert-critical {
+  background: var(--status-fail-dim);
+  border-color: var(--status-failed);
+  color: var(--status-failed);
+}
+
+.alert-warning {
+  background: var(--status-deg-dim);
+  border-color: var(--status-degraded);
+  color: var(--status-degraded);
+}
+
+.alert-info {
+  background: var(--sector-telecom-dim);
+  border-color: var(--sector-telecom);
+  color: var(--sector-telecom);
+}
+
+
+/* ──────────────────────────────────────────────
+   RESILIENCE SCORE DISPLAY
+   ────────────────────────────────────────────── */
+.resilience-value {
+  font-family: var(--font-data);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Color score by range */
+.resilience-value.high   { color: var(--status-operational); }
+.resilience-value.medium { color: var(--amber); }
+.resilience-value.low    { color: var(--status-failed); }
+
+
+/* ──────────────────────────────────────────────
+   UTILITY
+   ────────────────────────────────────────────── */
+.mono { font-family: var(--font-data); }
+.text-amber { color: var(--amber); }
+.text-muted { color: var(--text-muted); }
+.text-secondary { color: var(--text-secondary); }
+.text-primary { color: var(--text-primary); }
+
+.divider {
+  height: 1px;
+  background: var(--border-hairline);
+  margin: var(--space-4) 0;
+}
+
+/* Glowing amber number highlight */
+.glow-amber {
+  color: var(--amber-bright);
+  text-shadow: 0 0 12px var(--amber-glow);
+}
+
+
+/* ──────────────────────────────────────────────
+   ANIMATIONS
+   ────────────────────────────────────────────── */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-in {
+  animation: fade-in-up 0.4s var(--ease-out) both;
+}
+
+/* Stagger children */
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 60ms; }
+.stagger > *:nth-child(3) { animation-delay: 120ms; }
+.stagger > *:nth-child(4) { animation-delay: 180ms; }
+.stagger > *:nth-child(5) { animation-delay: 240ms; }
+.stagger > *:nth-child(6) { animation-delay: 300ms; }
+
+@keyframes amber-throb {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+.pulse-amber {
+  animation: amber-throb 2.4s ease-in-out infinite;
+}
+
+
+/* ──────────────────────────────────────────────
+   RECHARTS / CHART.JS OVERRIDES
+   Set these on your chart components via style prop
+   ────────────────────────────────────────────── */
+/*
+  Recharts tooltip:
+    contentStyle: {
+      background: 'var(--bg-overlay)',
+      border: '1px solid var(--border-default)',
+      borderRadius: '4px',
+      fontFamily: 'var(--font-data)',
+      fontSize: '11px',
+      color: 'var(--text-primary)',
+    }
+  
+  Recharts axes:
+    tick: { fill: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-data)' }
+    axisLine: { stroke: 'var(--border-hairline)' }
+    tickLine: false
+    
+  Grid lines:
+    stroke: 'var(--border-hairline)'
+    strokeDasharray: '3 3'
+*/
