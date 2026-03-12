@@ -10,7 +10,7 @@ export interface AuthRequest extends Request {
 
 export function generateToken(user: IUser): string {
   return jwt.sign(
-    { id: user._id, email: user.email, role: user.role },
+    { userId: user._id, name: user.name, role: user.role },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -24,8 +24,8 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
 
   try {
     const token = header.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; role: string };
-    const user = await User.findById(decoded.id).select('-password');
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
+    const user = await User.findById(decoded.userId).select('-password');
     if (!user) return res.status(401).json({ error: 'User not found' });
     req.user = user;
     next();
@@ -42,4 +42,20 @@ export function requireRole(...roles: string[]) {
     }
     next();
   };
+}
+
+export function requireOfficial(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+  if (req.user.role !== 'official') {
+    return res.status(403).json({ error: 'Official access required' });
+  }
+  next();
+}
+
+export function requireResponder(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+  if (req.user.role !== 'official' && req.user.role !== 'responder') {
+    return res.status(403).json({ error: 'Responder or official access required' });
+  }
+  next();
 }

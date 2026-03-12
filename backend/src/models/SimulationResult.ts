@@ -1,7 +1,14 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ISimulationResult extends Document {
-  scenarioId: mongoose.Types.ObjectId;
+  scenarioId?: mongoose.Types.ObjectId;
+  originNodeId?: string;
+  magnitude?: number;
+  resilience?: number;
+  affectedNodes?: string[];
+  propagationSteps?: string[][];
+  populationImpactPct?: number;
+  recoveryHours?: number;
   impactedNodes: Array<{
     nodeId: mongoose.Types.ObjectId;
     impactLevel: 'direct' | 'cascading';
@@ -25,7 +32,14 @@ export interface ISimulationResult extends Document {
 
 const SimulationResultSchema = new Schema<ISimulationResult>(
   {
-    scenarioId: { type: Schema.Types.ObjectId, ref: 'Scenario', required: true },
+    scenarioId: { type: Schema.Types.ObjectId, ref: 'Scenario', required: false },
+    originNodeId: { type: String },
+    magnitude: { type: Number },
+    resilience: { type: Number },
+    affectedNodes: [{ type: String }],
+    propagationSteps: [[{ type: String }]],
+    populationImpactPct: { type: Number },
+    recoveryHours: { type: Number },
     impactedNodes: [
       {
         nodeId: { type: Schema.Types.ObjectId, ref: 'InfrastructureNode' },

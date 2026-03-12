@@ -4,8 +4,10 @@ export interface IInfrastructureNode extends Document {
   name: string;
   type: 'power' | 'water' | 'transport' | 'telecom' | 'emergency';
   subtype: string;
+  zone: string;
+  operator?: string;
   location: { lat: number; lng: number };
-  status: 'operational' | 'degraded' | 'failed';
+  status: 'operational' | 'degraded' | 'failed' | 'maintenance' | 'unknown';
   capacity: number;
   currentLoad: number;
   criticalityScore: number;
@@ -23,6 +25,8 @@ const InfrastructureNodeSchema = new Schema<IInfrastructureNode>(
       enum: ['power', 'water', 'transport', 'telecom', 'emergency'],
     },
     subtype: { type: String, required: true },
+    zone: { type: String, required: true, default: 'Mumbai' },
+    operator: { type: String },
     location: {
       lat: { type: Number, required: true },
       lng: { type: Number, required: true },
@@ -30,7 +34,7 @@ const InfrastructureNodeSchema = new Schema<IInfrastructureNode>(
     status: {
       type: String,
       default: 'operational',
-      enum: ['operational', 'degraded', 'failed'],
+      enum: ['operational', 'degraded', 'failed', 'maintenance', 'unknown'],
     },
     capacity: { type: Number, default: 100 },
     currentLoad: { type: Number, default: 0 },
@@ -42,5 +46,6 @@ const InfrastructureNodeSchema = new Schema<IInfrastructureNode>(
 
 InfrastructureNodeSchema.index({ type: 1 });
 InfrastructureNodeSchema.index({ status: 1 });
+InfrastructureNodeSchema.index({ zone: 1 });
 
 export default mongoose.model<IInfrastructureNode>('InfrastructureNode', InfrastructureNodeSchema);
