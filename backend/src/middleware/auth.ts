@@ -8,9 +8,14 @@ export interface AuthRequest extends Request {
   user?: IUser;
 }
 
-export function generateToken(user: IUser): string {
+export function generateToken(user: IUser, extras?: { wardId?: string }): string {
   return jwt.sign(
-    { userId: user._id, name: user.name, role: user.role },
+    {
+      userId: user._id,
+      name: user.name,
+      role: user.role,
+      ...(extras?.wardId ? { wardId: extras.wardId } : {}),
+    },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -24,7 +29,7 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
 
   try {
     const token = header.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string; wardId?: string };
     const user = await User.findById(decoded.userId).select('-password');
     if (!user) return res.status(401).json({ error: 'User not found' });
     req.user = user;

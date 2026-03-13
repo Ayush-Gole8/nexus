@@ -1,38 +1,56 @@
 import axios from 'axios';
-import { getZoneResilience } from './emergency';
 
 const api = axios.create({ baseURL: '/api/citizen' });
 
+function authHeaders() {
+  const token = localStorage.getItem('nexus_token');
+  return token ? { Authorization: `Bearer ${token}` } : undefined;
+}
+
 export interface CitizenPassport {
-  wardId: string;
-  wardName: string;
-  resilienceScore: number;
+  overallResilienceScore: number;
   powerOutageRiskHrs: number;
-  waterDisruptionRiskHrs: number;
-  ambulanceEtaMin: number;
-  monsoonRisk: 'high' | 'medium' | 'low';
-  floodZone: boolean;
-  alerts: Array<{ id: string; level: string; title: string; message: string; timestamp: string }>;
+  waterDisruptionHrs: number;
+  ambulanceETA: number;
+  monsoonRisk: 'HIGH' | 'MEDIUM' | 'LOW';
+  dependencyCount: number;
+  nearestShelter: { name: string; distanceKm: number };
+  totalNodes: number;
+  criticalNodes: number;
 }
 
 export async function getCitizenPassport(wardId: string): Promise<CitizenPassport> {
-  try {
-    const { data } = await api.get(`/passport/${wardId}`);
-    return data;
-  } catch {
-    // Fallback while backend endpoint is pending.
-    const zones = await getZoneResilience().catch(() => [] as any[]);
-    const z = zones[0];
-    return {
-      wardId,
-      wardName: z?.zone || wardId,
-      resilienceScore: z?.overallScore || 62,
-      powerOutageRiskHrs: 2.5,
-      waterDisruptionRiskHrs: 3.1,
-      ambulanceEtaMin: 14,
-      monsoonRisk: z?.overallScore < 45 ? 'high' : z?.overallScore < 70 ? 'medium' : 'low',
-      floodZone: true,
-      alerts: [],
-    };
-  }
+  const { data } = await api.get(`/passport/${wardId}`, { headers: authHeaders() });
+  return data;
+}
+
+export interface CitizenAlert {
+  _id: string;
+  nodeId?: { _id: string; name: string; zone: string; type: string; status: string };
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  description: string;
+  wardId: string;
+  createdAt: string;
+  acknowledged: boolean;
+}
+
+export async function getCitizenAlerts(wardId: string): Promise<CitizenAlert[]> {
+  const { data } = await api.get('/alerts', {
+    params: { wardId },
+    headers: authHeaders(),
+  });
+  return Array.isArray(data) ? data : [];
+}
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  category: string;
+  priority: number;
+}
+
+export async function getCitizenChecklist(wardId: string): Promise<ChecklistItem[]> {
+  const { data } = await api.get(`/checklist/${wardId}`, { headers: authHeaders() });
+  return Array.isArray(data) ? data : [];
 }

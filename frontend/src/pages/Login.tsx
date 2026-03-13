@@ -7,19 +7,32 @@ import { Shield, Zap, AlertTriangle } from 'lucide-react';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'citizen' | 'official' | 'responder'>('citizen');
+  const [wardId, setWardId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
+  const wardOptions = ['Dharavi', 'Bandra', 'Andheri', 'Kurla', 'Sion', 'Worli', 'Borivali', 'Malad', 'Parel', 'Powai'];
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    if (role === 'citizen' && !wardId) {
+      setError('Please select your ward.');
+      return;
+    }
     setLoading(true);
     try {
-      const res = await apiLogin(email, password);
+      const res = await apiLogin(email, password, role, wardId || undefined);
       login(res.token, res.user);
-      navigate('/');
+      const dest = res.user.role === 'citizen'
+        ? '/citizen'
+        : res.user.role === 'responder'
+          ? '/emergency-response'
+          : '/dashboard';
+      navigate(dest, { replace: true });
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {
@@ -59,6 +72,50 @@ export default function Login() {
           )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ display: 'block', fontFamily: 'var(--font-data)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 6 }}>Role</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                {(['citizen', 'official', 'responder'] as const).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setRole(r)}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: `1px solid ${role === r ? 'var(--amber)' : 'var(--border-hairline)'}`,
+                      background: role === r ? 'rgba(240,165,0,0.12)' : 'var(--bg-elevated)',
+                      color: role === r ? 'var(--amber)' : 'var(--text-secondary)',
+                      fontSize: 11,
+                      textTransform: 'capitalize',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {role === 'citizen' && (
+              <div>
+                <label style={{ display: 'block', fontFamily: 'var(--font-data)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 6 }}>Ward</label>
+                <select
+                  required
+                  value={wardId}
+                  onChange={(e) => setWardId(e.target.value)}
+                  style={{ width: '100%', padding: '10px 14px', background: 'var(--bg-elevated)', border: '1px solid var(--border-hairline)', borderRadius: 8, color: 'var(--text-primary)', fontFamily: 'var(--font-data)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                  onFocus={e => (e.target.style.borderColor = 'var(--amber)')}
+                  onBlur={e => (e.target.style.borderColor = 'var(--border-hairline)')}
+                >
+                  <option value="">Select ward</option>
+                  {wardOptions.map((w) => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label style={{ display: 'block', fontFamily: 'var(--font-data)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 6 }}>Email</label>
               <input

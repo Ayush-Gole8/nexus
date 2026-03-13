@@ -5,6 +5,7 @@ import Dependency from '../models/Dependency';
 import Scenario from '../models/Scenario';
 import User from '../models/User';
 import WeatherEvent from '../models/WeatherEvent';
+import Alert from '../models/Alert';
 
 dotenv.config();
 
@@ -1321,6 +1322,7 @@ async function seed() {
   await Scenario.deleteMany({});
   await User.deleteMany({});
   await WeatherEvent.deleteMany({});
+  await Alert.deleteMany({});
   console.log('Cleared existing data');
 
   // Insert nodes
@@ -1580,6 +1582,112 @@ async function seed() {
     throw new Error(`Expected 12 monsoon weather events, found ${monsoonCount}`);
   }
 
+  // ── Ward Alerts ───────────────────────────────────────────
+  const nodeByName = (name: string) => {
+    const n = createdNodes.find((x) => x.name === name);
+    if (!n) throw new Error(`Missing node for alert seed: ${name}`);
+    return n;
+  };
+
+  const alerts = [
+    // Dharavi (4: 2 critical, 1 warning, 1 info)
+    {
+      nodeId: nodeByName('Dharavi 220kV Substation')._id,
+      severity: 'critical',
+      title: 'Dharavi Substation Overload Spike',
+      description: 'Load on Dharavi 220kV Substation crossed safe threshold during evening peak. Local outages possible if demand does not drop.',
+      wardId: 'Dharavi',
+    },
+    {
+      nodeId: nodeByName('Dharavi Intermediate Pump Station')._id,
+      severity: 'critical',
+      title: 'Pump Failure Risk at Dharavi Station',
+      description: 'Two pumps at Dharavi Intermediate Pump Station are operating above normal duty cycle. Water pressure may fall in nearby blocks.',
+      wardId: 'Dharavi',
+    },
+    {
+      nodeId: nodeByName('Kurla Station & LTT (CR + Harbour Line)')._id,
+      severity: 'warning',
+      title: 'Kurla Station Congestion Advisory',
+      description: 'Flood-prone approaches near Kurla Station are seeing heavy congestion. Emergency access lanes should be kept clear.',
+      wardId: 'Dharavi',
+    },
+    {
+      nodeId: nodeByName('KEM Hospital (King Edward Memorial)')._id,
+      severity: 'info',
+      title: 'KEM Hospital Backup Drills Completed',
+      description: 'KEM Hospital completed backup power and triage response drills. No service disruption reported.',
+      wardId: 'Dharavi',
+    },
+
+    // Sion (2)
+    {
+      nodeId: nodeByName('Sion Hospital (LTM General)')._id,
+      severity: 'warning',
+      title: 'Sion Hospital Ambulance Queue Delay',
+      description: 'Average ambulance handover time at Sion Hospital rose above target due to high emergency admissions.',
+      wardId: 'Sion',
+    },
+    {
+      nodeId: nodeByName('Eastern Express Highway (EEH / NH-48 spur)')._id,
+      severity: 'info',
+      title: 'EEH Drainage Clearance Update',
+      description: 'Drainage desilting along EEH near Sion completed for this week. Travel remains normal.',
+      wardId: 'Sion',
+    },
+
+    // Andheri (2)
+    {
+      nodeId: nodeByName('Andheri Distribution Hub')._id,
+      severity: 'warning',
+      title: 'Andheri Grid Voltage Fluctuation',
+      description: 'Andheri Distribution Hub reported short voltage dips during peak load transfer. Sensitive equipment should use stabilizers.',
+      wardId: 'Andheri',
+    },
+    {
+      nodeId: nodeByName('Fire Station Andheri')._id,
+      severity: 'info',
+      title: 'Andheri Fire Response Drill',
+      description: 'Fire Station Andheri completed rapid response drill across western corridor with normal turnout times.',
+      wardId: 'Andheri',
+    },
+
+    // Bandra (2)
+    {
+      nodeId: nodeByName('Bandra-Worli Sea Link (BWSL)')._id,
+      severity: 'warning',
+      title: 'High Wind Watch on BWSL',
+      description: 'Traffic authorities issued high-wind watch on Bandra-Worli Sea Link. Speed restrictions may apply during gust periods.',
+      wardId: 'Bandra',
+    },
+    {
+      nodeId: nodeByName('Lilavati Hospital')._id,
+      severity: 'info',
+      title: 'Lilavati Emergency Bed Availability Stable',
+      description: 'Lilavati Hospital reports stable emergency bed availability for the next 12 hours.',
+      wardId: 'Bandra',
+    },
+
+    // Worli (2)
+    {
+      nodeId: nodeByName('Worli-Prabhadevi Water Distribution')._id,
+      severity: 'critical',
+      title: 'Low Pressure Alert in Worli Main',
+      description: 'Worli-Prabhadevi Water Distribution line pressure dropped below safety threshold. Intermittent supply expected in high-rise zones.',
+      wardId: 'Worli',
+    },
+    {
+      nodeId: nodeByName('BMC Flood Emergency Shelter Worli')._id,
+      severity: 'info',
+      title: 'Worli Shelter Readiness Confirmed',
+      description: 'BMC Flood Emergency Shelter at Worli confirmed readiness and stock checks for monsoon contingency.',
+      wardId: 'Worli',
+    },
+  ];
+
+  const createdAlerts = await Alert.insertMany(alerts);
+  console.log(`Inserted ${createdAlerts.length} ward alerts`);
+
   // ── Summary ────────────────────────────────────────────────
   console.log('\n─────────────────────────────────────────────');
   console.log('  Seed complete! Summary');
@@ -1589,6 +1697,7 @@ async function seed() {
   console.log(`  Scenarios   : ${createdScenarios.length}`);
   console.log(`  Users       : ${users.length}`);
   console.log(`  WeatherEvts : ${createdWeatherEvents.length}`);
+  console.log(`  Alerts      : ${createdAlerts.length}`);
 
   const sectors: Record<string, number> = {};
   for (const n of createdNodes) {
