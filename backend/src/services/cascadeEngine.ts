@@ -1,5 +1,6 @@
 import { buildGraph } from './graphService';
 import InfrastructureNode from '../models/InfrastructureNode';
+import WeatherEvent from '../models/WeatherEvent';
 
 // ── BFS Cascade ──────────────────────────────────────────────────────────────
 
@@ -22,8 +23,22 @@ export async function runBFSCascade(
   originId: string,
   magnitude: number,
   resilience: number,
+  monsoonActive = false,
+  rainfall_mm = 100,
 ): Promise<BFSCascadeResult> {
   const { graph, nodeMap } = await buildGraph();
+
+  const nodeRiskMap = new Map<string, number>();
+  if (monsoonActive) {
+    const monsoonEvents = await WeatherEvent.find({ season: 'monsoon' }).lean();
+    for (const event of monsoonEvents) {
+      for (const id of event.affectedNodeIds || []) {
+        const nodeId = id.toString();
+        const current = nodeRiskMap.get(nodeId) ?? 1.0;
+        nodeRiskMap.set(nodeId, Math.max(current, event.riskMultiplier));
+      }
+    }
+  }
 
   if (!graph.hasNode(originId)) {
     return {
@@ -63,6 +78,8 @@ export async function runBFSCascade(
 
         let failProb = magnitude * (weight / 5) * (1 - resilience);
         if (type === 'critical') failProb *= 1.5;
+        const monsoonFactor = monsoonActive ? (nodeRiskMap.get(targetId) ?? 1.0) : 1.0;
+        failProb *= monsoonFactor;
         failProb = Math.min(1.0, failProb);
 
         if (Math.random() < failProb) {

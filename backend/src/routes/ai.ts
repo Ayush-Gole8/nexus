@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { getAIInsights, chatWithAI } from '../services/aiService';
+import { getAIInsights, streamChatResponse } from '../services/aiService';
 import { isGeminiAvailable } from '../config/gemini';
+import { authenticate, type AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -20,15 +21,16 @@ router.post('/insights', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/ai/chat — conversational chat
-router.post('/chat', async (req: Request, res: Response) => {
+// POST /api/ai/chat — conversational chat (SSE)
+router.post('/chat', authenticate, async (req: Request, res: Response) => {
   try {
     const { message, history } = req.body;
     if (!message) {
       return res.status(400).json({ error: 'message is required' });
     }
-    const response = await chatWithAI(message, history || []);
-    res.json({ response });
+    const role = (req as AuthRequest).user?.role || 'citizen';
+    const messages = [...(history ?? []), { role: 'user', content: message }];
+    await streamChatResponse(messages, role, res);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

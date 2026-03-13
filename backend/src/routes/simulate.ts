@@ -8,7 +8,14 @@ const router = Router();
 // POST /api/simulate — run BFS cascade and persist result
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { scenario, originNodeId, magnitude = 0.7, resilience = 0.3 } = req.body;
+    const {
+      scenario,
+      originNodeId,
+      magnitude = 0.7,
+      resilience = 0.3,
+      monsoonActive = false,
+      rainfall_mm = 100,
+    } = req.body;
 
     if (!originNodeId || typeof originNodeId !== 'string') {
       return res.status(400).json({ error: 'originNodeId is required' });
@@ -19,8 +26,20 @@ router.post('/', async (req: Request, res: Response) => {
     if (typeof resilience !== 'number' || resilience < 0 || resilience > 1) {
       return res.status(400).json({ error: 'resilience must be a number in [0, 1]' });
     }
+    if (typeof monsoonActive !== 'boolean') {
+      return res.status(400).json({ error: 'monsoonActive must be a boolean' });
+    }
+    if (typeof rainfall_mm !== 'number' || rainfall_mm < 50 || rainfall_mm > 500) {
+      return res.status(400).json({ error: 'rainfall_mm must be a number in [50, 500]' });
+    }
 
-    const bfsResult = await runBFSCascade(originNodeId, magnitude, resilience);
+    const bfsResult = await runBFSCascade(
+      originNodeId,
+      magnitude,
+      resilience,
+      monsoonActive,
+      rainfall_mm,
+    );
 
     // Map string node IDs to the format the SimulationResult model expects
     const impactedNodes = bfsResult.affectedNodes.flatMap((nid, idx) => {
@@ -43,6 +62,8 @@ router.post('/', async (req: Request, res: Response) => {
       originNodeId,
       magnitude,
       resilience,
+      monsoonActive,
+      rainfall_mm,
       affectedNodes: bfsResult.affectedNodes,
       propagationSteps: bfsResult.propagationSteps,
       populationImpactPct: bfsResult.populationImpactPct,

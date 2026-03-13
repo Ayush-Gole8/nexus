@@ -1,66 +1,130 @@
+import type { Response } from 'express';
 import { getGeminiModel, isGeminiAvailable } from '../config/gemini';
 import InfrastructureNode from '../models/InfrastructureNode';
-import Dependency from '../models/Dependency';
-import { getCriticalNodes } from './graphService';
 
-const SYSTEM_PROMPT = `You are NEXUS AI, a city infrastructure resilience analyst. You analyze urban infrastructure dependencies, cascading failure risks, and provide actionable recommendations.
+type ChatMessage = { role: string; content: string };
 
-Your expertise covers:
-- Power grid infrastructure (plants, substations, distribution)
-- Water supply and distribution systems
-- Transportation networks (roads, bridges, transit hubs)
-- Telecommunications infrastructure (data centers, cell towers, fiber)
-- Emergency services (hospitals, fire stations, police stations)
+export interface LiveState {
+  totalNodes: number;
+  criticalCount: number;
+  topRiskNode: { name: string; zone: string; uptime: number };
+  resilienceIndex: number;
+}
 
-When analyzing infrastructure:
-1. Identify critical vulnerabilities and single points of failure
-2. Explain how failures cascade across interconnected systems
-3. Recommend mitigation strategies and redundancy improvements
-4. Prioritize risks by severity and likelihood
-
-Always respond in a structured JSON format with these fields:
-{
-  "summary": "Brief overview of findings",
-  "risks": ["risk1", "risk2", ...],
-  "recommendations": ["rec1", "rec2", ...],
-  "criticalFindings": ["finding1", "finding2", ...]
-}`;
-
-async function getInfrastructureContext(): Promise<string> {
+async function fetchLiveState(): Promise<LiveState> {
   const nodes = await InfrastructureNode.find().lean();
-  const deps = await Dependency.find()
-    .populate('sourceNodeId', 'name type')
-    .populate('targetNodeId', 'name type')
-    .lean();
+  const totalNodes = nodes.length;
+  const criticalCount = nodes.filter((n) => n.status === 'failed' || n.status === 'degraded').length;
 
-  const sectorCounts: Record<string, number> = {};
-  const statusCounts: Record<string, number> = {};
-  for (const node of nodes) {
-    sectorCounts[node.type] = (sectorCounts[node.type] || 0) + 1;
-    statusCounts[node.status] = (statusCounts[node.status] || 0) + 1;
+  const withUptime = nodes.map((n) => {
+    const uptime = typeof (n.properties as Record<string, unknown> | undefined)?.uptime === 'number'
+      ? Number((n.properties as Record<string, unknown>).uptime)
+      : 100;
+    return { node: n, uptime };
+  });
+
+  const top = withUptime.sort((a, b) => {
+    const aScore = (100 - a.uptime) + a.node.criticalityScore;
+    const bScore = (100 - b.uptime) + b.node.criticalityScore;
+    return bScore - aScore;
+  })[0];
+
+  const avgUptime = withUptime.length
+    ? withUptime.reduce((sum, n) => sum + n.uptime, 0) / withUptime.length
+    : 100;
+  const resilienceIndex = Math.max(0, Math.min(100, Math.round(avgUptime - (criticalCount / Math.max(1, totalNodes)) * 30)));
+
+  return {
+    totalNodes,
+    criticalCount,
+    topRiskNode: {
+      name: top?.node.name ?? 'N/A',
+      zone: top?.node.zone ?? 'Mumbai',
+      uptime: top?.uptime ?? 100,
+    },
+    resilienceIndex,
+  };
+}
+
+export function buildSystemPrompt(liveState: LiveState, role: string): string {
+  const base = [
+    'You are NEXUS AI, an assistant for Mumbai City Infrastructure Intelligence.',
+    `Live system state: ${liveState.totalNodes} nodes tracked, ${liveState.criticalCount} currently critical.`,
+    `Top risk node: ${liveState.topRiskNode.name} in ${liveState.topRiskNode.zone} (uptime: ${liveState.topRiskNode.uptime}%).`,
+    `Overall resilience index: ${liveState.resilienceIndex}/100.`,
+  ].join(' ');
+
+  const roleInstructions: Record<string, string> = {
+    official:
+      'You are speaking with a City Official. Provide technical detail, exact risk scores, affected node counts, cascade depth, and policy options. Use infrastructure terminology.',
+    responder:
+      'You are speaking with an Emergency Responder. Focus on ETAs, blocked transport routes, nearest service bases, and resource deployment priorities. Be brief and actionable.',
+    citizen:
+      'You are speaking with a Citizen. Use plain everyday language. Explain what infrastructure failures mean for water, power, and commute. Do not use technical jargon.',
+  };
+
+  return `${base} ${roleInstructions[role] ?? roleInstructions.citizen}`;
+}
+
+function toGeminiContents(messages: ChatMessage[]) {
+  return messages.map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+}
+
+export async function generateInfrastructureInsight(prompt: string, role: string): Promise<string> {
+  if (!isGeminiAvailable()) {
+    return 'AI analysis unavailable — Gemini API key not configured.';
   }
 
-  let criticalNodes: Awaited<ReturnType<typeof getCriticalNodes>> = [];
-  try {
-    criticalNodes = await getCriticalNodes(5);
-  } catch {
-    // Graph might be empty
+  const liveState = await fetchLiveState();
+  const system = buildSystemPrompt(liveState, role);
+  const model = getGeminiModel();
+
+  const response = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: `${system}\n\n${prompt}` }] }],
+  });
+
+  return response.response.text();
+}
+
+export async function streamChatResponse(messages: ChatMessage[], role: string, res: Response): Promise<void> {
+  if (!isGeminiAvailable()) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    res.write(`data: ${JSON.stringify({ text: 'AI chat unavailable — configure GEMINI_API_KEY.' })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    res.end();
+    return;
   }
 
-  return `
-INFRASTRUCTURE OVERVIEW:
-- Total nodes: ${nodes.length}
-- Sectors: ${JSON.stringify(sectorCounts)}
-- Status: ${JSON.stringify(statusCounts)}
-- Total dependencies: ${deps.length}
-- Top critical nodes: ${criticalNodes.map((n) => `${n.name} (${n.type}, score: ${n.compositeScore})`).join(', ')}
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
 
-DEPENDENCY DETAILS:
-${deps
-  .slice(0, 50)
-  .map((d: any) => `${d.sourceNodeId?.name || 'Unknown'} (${d.sourceNodeId?.type}) → ${d.targetNodeId?.name || 'Unknown'} (${d.targetNodeId?.type}) [${d.dependencyType}, strength: ${d.strength}]`)
-  .join('\n')}
-`;
+  const liveState = await fetchLiveState();
+  const system = buildSystemPrompt(liveState, role);
+  const model = getGeminiModel();
+  const stream = await model.generateContentStream({
+    contents: [
+      { role: 'user', parts: [{ text: `System instruction: ${system}` }] },
+      ...toGeminiContents(messages),
+    ],
+  });
+
+  for await (const chunk of stream.stream) {
+    const text = chunk.text();
+    if (text) {
+      res.write(`data: ${JSON.stringify({ text })}\n\n`);
+    }
+  }
+
+  res.write('data: [DONE]\n\n');
+  res.end();
 }
 
 export async function getAIInsights(
@@ -72,42 +136,11 @@ export async function getAIInsights(
   recommendations: string[];
   criticalFindings: string[];
 }> {
-  if (!isGeminiAvailable()) {
-    return {
-      summary: 'AI analysis unavailable — Gemini API key not configured.',
-      risks: ['Cannot perform AI analysis without API key'],
-      recommendations: ['Configure GEMINI_API_KEY in .env file'],
-      criticalFindings: [],
-    };
-  }
-
-  const model = getGeminiModel();
-  const infraContext = await getInfrastructureContext();
-
-  const prompt = `${SYSTEM_PROMPT}
-
-CURRENT INFRASTRUCTURE DATA:
-${infraContext}
-
-${context ? `ADDITIONAL CONTEXT:\n${context}\n` : ''}
-${specificQuery ? `USER QUERY: ${specificQuery}` : 'Provide a comprehensive infrastructure resilience analysis.'}
-
-Respond ONLY with valid JSON in the format specified above.`;
-
-  const result = await model.generateContent(prompt);
-  const text = result.response.text();
-
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-  } catch {
-    // Failed to parse JSON
-  }
-
+  const query = [context, specificQuery].filter(Boolean).join('\n\n')
+    || 'Provide a comprehensive infrastructure resilience analysis as JSON with summary, risks, recommendations, and criticalFindings.';
+  const summary = await generateInfrastructureInsight(query, 'official');
   return {
-    summary: text,
+    summary,
     risks: [],
     recommendations: [],
     criticalFindings: [],
@@ -118,28 +151,7 @@ export async function chatWithAI(
   message: string,
   conversationHistory: Array<{ role: string; content: string }> = []
 ): Promise<string> {
-  if (!isGeminiAvailable()) {
-    return 'AI chat unavailable — please configure GEMINI_API_KEY in .env file.';
-  }
-
-  const model = getGeminiModel();
-  const infraContext = await getInfrastructureContext();
-
-  const historyText = conversationHistory
-    .slice(-10)
-    .map((m) => `${m.role}: ${m.content}`)
-    .join('\n');
-
-  const prompt = `You are NEXUS AI, a city infrastructure resilience analyst. Be conversational but insightful.
-
-INFRASTRUCTURE DATA:
-${infraContext}
-
-${historyText ? `CONVERSATION HISTORY:\n${historyText}\n` : ''}
-USER: ${message}
-
-Provide a helpful, detailed response about the city's infrastructure. Use specific data from the infrastructure overview when possible.`;
-
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+  const messages = [...conversationHistory, { role: 'user', content: message }];
+  const prompt = messages.map((m) => `${m.role}: ${m.content}`).join('\n');
+  return generateInfrastructureInsight(prompt, 'citizen');
 }

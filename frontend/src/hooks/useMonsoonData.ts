@@ -5,6 +5,7 @@ export interface MonsoonZone {
   _id?: string;
   nodeId?: string | { _id?: string };
   affectedNodes?: Array<string | { _id?: string }>;
+  affectedNodeIds?: Array<string | { _id?: string }>;
   riskMultiplier: number;
   floodZone: boolean;
   zoneName?: string;
@@ -22,6 +23,11 @@ function toNodeId(value: unknown): string | null {
   return null;
 }
 
+function authHeaders() {
+  const token = localStorage.getItem('nexus_token');
+  return token ? { Authorization: `Bearer ${token}` } : undefined;
+}
+
 export function useMonsoonData() {
   const [floodZoneIds, setFloodZoneIds] = useState<Set<string>>(new Set());
   const [zones, setZones] = useState<MonsoonZone[]>([]);
@@ -30,10 +36,10 @@ export function useMonsoonData() {
   const loadZones = useCallback(async () => {
     let payload: MonsoonZone[] = [];
     try {
-      const { data } = await api.get('/monsoon-zones');
+      const { data } = await api.get('/monsoon-zones', { headers: authHeaders() });
       payload = Array.isArray(data) ? data : [];
     } catch {
-      const { data } = await api.get('/flood-zones');
+      const { data } = await api.get('/flood-zones', { headers: authHeaders() });
       payload = Array.isArray(data) ? data : [];
     }
 
@@ -46,6 +52,13 @@ export function useMonsoonData() {
 
       if (Array.isArray(z.affectedNodes)) {
         z.affectedNodes.forEach((entry) => {
+          const id = toNodeId(entry);
+          if (id) ids.add(id);
+        });
+      }
+
+      if (Array.isArray(z.affectedNodeIds)) {
+        z.affectedNodeIds.forEach((entry) => {
           const id = toNodeId(entry);
           if (id) ids.add(id);
         });
