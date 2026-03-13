@@ -5,7 +5,7 @@ import * as THREE from 'three';
 // @ts-ignore - Ignore module not found if it's a false positive or path mapping issue
 import { SectorModel } from './SectorModels';
 import type { InfrastructureNode, Dependency } from '../../types';
-import type { MonsoonZone } from '../../hooks/useMonsoonData';
+import type { MonsoonZone } from '../../contexts/MonsoonContext';
 import { SECTOR_COLORS, STATUS_COLORS } from '../../types';
 import {
   MUMBAI_COAST, NAVI_MUMBAI_COAST, THANE_BOUNDARY,
@@ -651,12 +651,16 @@ function RainColumn({ center }: { center: [number, number, number] }) {
 function MonsoonOverlayZone({ zone }: { zone: MonsoonZone }) {
   const ringRef = useRef<THREE.Mesh>(null!);
 
+  const zoneAnchor = Array.isArray(zone.affectedNodeIds)
+    ? zone.affectedNodeIds.find((n) => typeof n === 'object' && !!n?.location)
+    : undefined;
+
   const lat =
     zone.location?.lat ??
-    (typeof zone.nodeId === 'object' && zone.nodeId ? (zone.nodeId as any).location?.lat : undefined);
+    (typeof zoneAnchor === 'object' && zoneAnchor ? (zoneAnchor as any).location?.lat : undefined);
   const lng =
     zone.location?.lng ??
-    (typeof zone.nodeId === 'object' && zone.nodeId ? (zone.nodeId as any).location?.lng : undefined);
+    (typeof zoneAnchor === 'object' && zoneAnchor ? (zoneAnchor as any).location?.lng : undefined);
 
   if (typeof lat !== 'number' || typeof lng !== 'number') return null;
 

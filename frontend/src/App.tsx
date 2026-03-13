@@ -13,6 +13,7 @@ import CitizenDashboard from './pages/CitizenDashboard.tsx';
 import ResilienceHeatmap from './pages/ResilienceHeatmap.tsx';
 import PredictiveAnalytics from './pages/PredictiveAnalytics.tsx';
 import { useAuth } from './context/AuthContext';
+import { MonsoonProvider } from './contexts/MonsoonContext';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -30,26 +31,28 @@ function OfficialRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Public routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+    <MonsoonProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
 
-        {/* Protected routes */}
-        <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route index element={<Dashboard />} />
-          <Route path="network" element={<NetworkMap />} />
-          <Route path="cascade" element={<CascadeAnalysis />} />
-          <Route path="simulator" element={<ScenarioSimulator />} />
-          <Route path="ai" element={<AIInsights />} />
-          <Route path="emergency" element={<EmergencyResponse />} />
-          <Route path="citizen" element={<CitizenDashboard />} />
-          <Route path="heatmap" element={<ResilienceHeatmap />} />
-          <Route path="predictive" element={<OfficialRoute><PredictiveAnalytics /></OfficialRoute>} />
-          <Route path="manage" element={<OfficialRoute><InfrastructureManager /></OfficialRoute>} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+          {/* Protected routes */}
+          <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route index element={<Dashboard />} />
+            <Route path="network" element={<NetworkMap />} />
+            <Route path="cascade" element={<CascadeAnalysis />} />
+            <Route path="simulator" element={<ScenarioSimulator />} />
+            <Route path="ai" element={<AIInsights />} />
+            <Route path="emergency" element={<EmergencyResponse />} />
+            <Route path="citizen" element={<CitizenDashboard />} />
+            <Route path="heatmap" element={<ResilienceHeatmap />} />
+            <Route path="predictive" element={<OfficialRoute><PredictiveAnalytics /></OfficialRoute>} />
+            <Route path="manage" element={<OfficialRoute><InfrastructureManager /></OfficialRoute>} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </MonsoonProvider>
   );
 }

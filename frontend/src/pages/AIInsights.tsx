@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Send, Bot, User, AlertTriangle, Loader2, Activity, ShieldAlert } from 'lucide-react';
-import { getAIStatus, getAlertFeed, chatWithAI, type AlertFeedItem } from '../api/ai';
+import { getAIStatus, getAlertFeed, streamChatWithAI, type AlertFeedItem } from '../api/ai';
 import { getNodes, getDependencies } from '../api/infrastructure';
 import { getCriticalNodes } from '../api/analysis';
 import { getDashboardMetrics } from '../api/dashboard';
+import { useAuth } from '../context/AuthContext';
 
 interface Message {
   id: string;
@@ -20,6 +21,7 @@ interface MetricsPanelData {
 }
 
 export default function AIInsights() {
+  const { token } = useAuth();
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -104,21 +106,9 @@ export default function AIInsights() {
     ].join('\n');
   };
 
-  const streamAssistantText = async (fullText: string) => {
-    const id = `${Date.now()}-assistant`;
-    const newMsg: Message = { id, role: 'assistant', content: '', timestamp: new Date() };
-    setMessages((prev) => [...prev, newMsg]);
-
-    for (let i = 1; i <= fullText.length; i += 8) {
-      const slice = fullText.slice(0, i);
-      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, content: slice } : m)));
-      await new Promise((r) => setTimeout(r, 18));
-    }
-  };
-
   const sendMessage = useCallback(async () => {
     const raw = input.trim();
-    if (!raw || sending || !aiAvailable) return;
+    if (!raw || sending || !aiAvailable || !token) return;
 
     setInput('');
     setSending(true);
@@ -134,15 +124,32 @@ export default function AIInsights() {
     try {
       const context = await injectLiveInfraState();
       const history = messages.map((m) => ({ role: m.role, content: m.content }));
-      const response = await chatWithAI(`${context}\n\nUSER QUERY:\n${raw}`, history);
-      await streamAssistantText(response);
+      const assistantId = `${Date.now()}-assistant`;
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantId, role: 'assistant', content: '', timestamp: new Date() },
+      ]);
+
+      await streamChatWithAI(`${context}\n\nUSER QUERY:\n${raw}`, history, token, (chunk) => {
+        setMessages((prev) => prev.map((m) => (
+          m.id === assistantId ? { ...m, content: `${m.content}${chunk}` } : m
+        )));
+      });
     } catch (err) {
       console.error(err);
-      await streamAssistantText('Unable to generate AI response right now. Please try again in a moment.');
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-assistant-error`,
+          role: 'assistant',
+          content: 'Unable to generate AI response right now. Please try again in a moment.',
+          timestamp: new Date(),
+        },
+      ]);
     } finally {
       setSending(false);
     }
-  }, [input, sending, aiAvailable, messages]);
+  }, [input, sending, aiAvailable, token, messages]);
 
   const quickPrompts = useMemo(() => [
     'Identify top 3 cascading failure risks right now.',
@@ -261,13 +268,13 @@ export default function AIInsights() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                disabled={!aiAvailable || sending}
+                disabled={!aiAvailable || sending || !token}
                 placeholder="Ask about resilience, risk, or cascade strategy..."
                 className="flex-1 px-3 py-2.5 bg-slate-700 border border-slate-600 rounded-lg text-sm text-white placeholder-slate-400"
               />
               <button
                 onClick={sendMessage}
-                disabled={!input.trim() || !aiAvailable || sending}
+                disabled={!input.trim() || !aiAvailable || sending || !token}
                 className="px-3 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />

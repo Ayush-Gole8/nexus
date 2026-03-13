@@ -1,64 +1,75 @@
 import { Router, Request, Response } from 'express';
 import WeatherEvent from '../models/WeatherEvent';
+import InfrastructureNode from '../models/InfrastructureNode';
+import { authenticate as authMiddleware } from '../middleware/auth';
 
 const router = Router();
 
 // POST /api/weather/monsoon-risk
 // body: { rainfall_mm: number }
-// Returns all nodes with monsoon WeatherEvent records, ranked by adjusted failure probability.
-// adjustedFailProb = baseVulnerability * riskMultiplier * (rainfall_mm / 100), clamped to [0, 1]
-router.post('/monsoon-risk', async (req: Request, res: Response) => {
+router.post('/monsoon-risk', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { rainfall_mm } = req.body;
 
-    if (typeof rainfall_mm !== 'number' || rainfall_mm < 0) {
-      return res.status(400).json({ error: 'rainfall_mm must be a non-negative number' });
+    if (typeof rainfall_mm !== 'number' || rainfall_mm < 50 || rainfall_mm > 500) {
+      return res.status(400).json({ error: 'rainfall_mm must be a number between 50 and 500' });
     }
 
-    const events = await WeatherEvent.find({ season: 'monsoon' }).populate('nodeId');
+    const [events, nodes] = await Promise.all([
+      WeatherEvent.find({ season: 'monsoon' }).lean(),
+      InfrastructureNode.find().lean(),
+    ]);
 
-    const results = events.map((event) => {
-      const node = event.nodeId as unknown as Record<string, any>;
+    const riskMap = new Map<string, { riskMultiplier: number; floodZone: boolean; zoneName: string }>();
+    for (const event of events) {
+      const zoneEntry = {
+        riskMultiplier: event.riskMultiplier,
+        floodZone: event.floodZone,
+        zoneName: event.zoneName,
+      };
 
-      // baseVulnerability blends load ratio (0–1) and status degradation
-      const loadRatio = node.capacity > 0
-        ? node.currentLoad / node.capacity
-        : 0;
-      const statusPenalty =
-        node.status === 'failed'      ? 1.0 :
-        node.status === 'degraded'    ? 0.6 :
-        node.status === 'maintenance' ? 0.4 : 0.2;
-      const baseVulnerability = Math.min(1, loadRatio * 0.6 + statusPenalty * 0.4);
+      for (const id of event.affectedNodeIds || []) {
+        const nodeId = id.toString();
+        const existing = riskMap.get(nodeId);
+        if (!existing || zoneEntry.riskMultiplier > existing.riskMultiplier) {
+          riskMap.set(nodeId, zoneEntry);
+        }
+      }
+    }
+
+    const results = nodes.map((node) => {
+      const uptime = typeof (node.properties as Record<string, unknown> | undefined)?.uptime === 'number'
+        ? Number((node.properties as Record<string, unknown>).uptime)
+        : 100;
+      const baseVuln = 1 - uptime / 100;
+      const zoneData = riskMap.get(node._id.toString()) ?? {
+        riskMultiplier: 0.5,
+        floodZone: false,
+        zoneName: 'None',
+      };
 
       const adjustedFailProb = Math.min(
         1,
-        baseVulnerability * event.riskMultiplier * (rainfall_mm / 100),
+        baseVuln * zoneData.riskMultiplier * (rainfall_mm / 100),
       );
+      const adjustedFailProbPct = Math.round(adjustedFailProb * 1000) / 10;
 
       return {
-        nodeId:             node._id,
-        name:               node.name,
-        type:               node.type,
-        status:             node.status,
-        zone:               event.zoneName,
-        floodZone:          event.floodZone,
-        riskMultiplier:     event.riskMultiplier,
-        historicalFailures: event.historicalFailures,
-        baseVulnerability:  Math.round(baseVulnerability * 1000) / 1000,
-        adjustedFailProb:   Math.round(adjustedFailProb * 1000) / 1000,
+        nodeId: node._id,
+        name: node.name,
+        zone: node.zone,
+        type: node.type,
+        status: node.status,
+        uptime,
+        adjustedFailProbPct,
+        floodZone: zoneData.floodZone,
+        zoneName: zoneData.zoneName,
       };
     });
 
-    results.sort((a, b) => b.adjustedFailProb - a.adjustedFailProb);
+    results.sort((a, b) => b.adjustedFailProbPct - a.adjustedFailProbPct);
 
-    return res.json({
-      rainfall_mm,
-      totalNodesAssessed: results.length,
-      highRiskCount:      results.filter((r) => r.adjustedFailProb >= 0.7).length,
-      mediumRiskCount:    results.filter((r) => r.adjustedFailProb >= 0.4 && r.adjustedFailProb < 0.7).length,
-      lowRiskCount:       results.filter((r) => r.adjustedFailProb < 0.4).length,
-      nodes:              results,
-    });
+    return res.json(results);
   } catch (err) {
     console.error('Monsoon risk error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -66,16 +77,30 @@ router.post('/monsoon-risk', async (req: Request, res: Response) => {
 });
 
 // GET /api/weather/flood-zones
-// Returns all monsoon WeatherEvent records with basic node info, no rainfall calculation.
-router.get('/flood-zones', async (_req: Request, res: Response) => {
+router.get('/flood-zones', authMiddleware, async (_req: Request, res: Response) => {
   try {
     const events = await WeatherEvent.find({ floodZone: true, season: 'monsoon' })
-      .populate('nodeId', 'name type status location criticalityScore')
-      .sort({ riskMultiplier: -1 });
+      .select('zoneName riskMultiplier affectedNodeIds floodZone historicalFailures season')
+      .sort({ riskMultiplier: -1 })
+      .lean();
 
     return res.json(events);
   } catch (err) {
     console.error('Flood zones error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/weather/monsoon-zones
+router.get('/monsoon-zones', authMiddleware, async (_req: Request, res: Response) => {
+  try {
+    const zones = await WeatherEvent.find({ season: 'monsoon' })
+      .populate('affectedNodeIds', 'name type zone location status properties')
+      .sort({ riskMultiplier: -1 })
+      .lean();
+    return res.json(zones);
+  } catch (err) {
+    console.error('Monsoon zones error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

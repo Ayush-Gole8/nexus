@@ -1320,6 +1320,7 @@ async function seed() {
   await Dependency.deleteMany({});
   await Scenario.deleteMany({});
   await User.deleteMany({});
+  await WeatherEvent.deleteMany({});
   console.log('Cleared existing data');
 
   // Insert nodes
@@ -1436,119 +1437,148 @@ async function seed() {
   console.log(`Created ${users.length} demo users`);
 
   // ── Monsoon / Flood-Risk WeatherEvents ────────────────────
-  // 8 high-risk Mumbai flood zones linked to representative infrastructure nodes.
-  // Nodes referenced by index in createdNodes[]:
-  //   3  – Dharavi 220kV Substation      (power)
-  //  25  – Dharavi Intermediate Pump Stn  (water)
-  //  13  – Kurla Distribution Hub         (power)
-  //  47  – Kurla Station                  (transport, index 47)
-  //  29  – South Mumbai Water Dist Main   (water)  → used for Sion zone
-  //  20  – Bhandup Complex WTP            (water)
-  //   7  – Vikhroli 220kV Substation      (power)
-  //  11  – Andheri Distribution Hub       (power)
-  //  39  – SCLR (Chunabhatti corridor)    (transport)
-  //   8  – Chembur 110kV Substation       (power)  → Govandi zone
+  // Logical IDs map to createdNodes[] by sector index ranges.
+  const logicalNodeMap: Record<string, mongoose.Types.ObjectId> = {
+    p2: createdNodes[1]._id,
+    p3: createdNodes[2]._id,
+    p4: createdNodes[3]._id,
+    p5: createdNodes[4]._id,
+    p6: createdNodes[5]._id,
+    p8: createdNodes[7]._id,
+    p9: createdNodes[8]._id,
+    p10: createdNodes[9]._id,
+    p11: createdNodes[10]._id,
+    w4: createdNodes[23]._id,
+    w5: createdNodes[24]._id,
+    w8: createdNodes[27]._id,
+    w9: createdNodes[28]._id,
+    t1: createdNodes[34]._id,
+    t2: createdNodes[35]._id,
+    t3: createdNodes[36]._id,
+    t4: createdNodes[37]._id,
+    t6: createdNodes[39]._id,
+    t7: createdNodes[40]._id,
+    t8: createdNodes[41]._id,
+    t9: createdNodes[42]._id,
+    t10: createdNodes[43]._id,
+    t11: createdNodes[44]._id,
+    c2: createdNodes[58]._id,
+    c3: createdNodes[59]._id,
+    c5: createdNodes[61]._id,
+    c7: createdNodes[63]._id,
+    c8: createdNodes[64]._id,
+    e3: createdNodes[74]._id,
+    e4: createdNodes[75]._id,
+    e5: createdNodes[76]._id,
+    e6: createdNodes[77]._id,
+  };
 
   const weatherEvents = [
-    // ── Dharavi (worst urban flood zone in Asia) ──
     {
-      nodeId: createdNodes[3]._id,   // Dharavi 220kV Substation
-      season: 'monsoon',
-      riskMultiplier: 3.0,
-      floodZone: true,
-      historicalFailures: 15,
       zoneName: 'Dharavi',
+      season: 'monsoon',
+      riskMultiplier: 2.1,
+      floodZone: true,
+      historicalFailures: 47,
+      affectedNodeIds: [logicalNodeMap.p2, logicalNodeMap.p9, logicalNodeMap.c5, logicalNodeMap.e5, logicalNodeMap.t6],
     },
     {
-      nodeId: createdNodes[25]._id,  // Dharavi Intermediate Pump Station
-      season: 'monsoon',
-      riskMultiplier: 3.0,
-      floodZone: true,
-      historicalFailures: 12,
-      zoneName: 'Dharavi',
-    },
-
-    // ── Kurla ──
-    {
-      nodeId: createdNodes[13]._id,  // Kurla Distribution Hub
-      season: 'monsoon',
-      riskMultiplier: 2.8,
-      floodZone: true,
-      historicalFailures: 12,
-      zoneName: 'Kurla',
-    },
-    {
-      nodeId: createdNodes[47]._id,  // Kurla Station (transport)
-      season: 'monsoon',
-      riskMultiplier: 2.8,
-      floodZone: true,
-      historicalFailures: 10,
-      zoneName: 'Kurla',
-    },
-
-    // ── Andheri (East) ──
-    {
-      nodeId: createdNodes[11]._id,  // Andheri Distribution Hub
-      season: 'monsoon',
-      riskMultiplier: 2.6,
-      floodZone: true,
-      historicalFailures: 11,
-      zoneName: 'Andheri (East)',
-    },
-
-    // ── Govandi ──
-    {
-      nodeId: createdNodes[8]._id,   // Chembur 110kV Substation (serves Govandi corridor)
-      season: 'monsoon',
-      riskMultiplier: 2.7,
-      floodZone: true,
-      historicalFailures: 10,
-      zoneName: 'Govandi',
-    },
-
-    // ── Sion ──
-    {
-      nodeId: createdNodes[29]._id,  // South Mumbai Water Distribution Main (serves Sion)
-      season: 'monsoon',
-      riskMultiplier: 2.5,
-      floodZone: true,
-      historicalFailures: 8,
       zoneName: 'Sion',
-    },
-
-    // ── Chunabhatti ──
-    {
-      nodeId: createdNodes[39]._id,  // SCLR (Chunabhatti road corridor node)
       season: 'monsoon',
-      riskMultiplier: 2.4,
+      riskMultiplier: 1.9,
       floodZone: true,
-      historicalFailures: 7,
-      zoneName: 'Chunabhatti',
+      historicalFailures: 38,
+      affectedNodeIds: [logicalNodeMap.p3, logicalNodeMap.p11, logicalNodeMap.t2, logicalNodeMap.c8],
     },
-
-    // ── Vikhroli ──
     {
-      nodeId: createdNodes[7]._id,   // Vikhroli 220kV Substation
+      zoneName: 'Kurla East',
       season: 'monsoon',
-      riskMultiplier: 2.2,
+      riskMultiplier: 1.7,
       floodZone: true,
+      historicalFailures: 31,
+      affectedNodeIds: [logicalNodeMap.p9, logicalNodeMap.t6, logicalNodeMap.t11, logicalNodeMap.w4],
+    },
+    {
+      zoneName: 'Andheri Subway',
+      season: 'monsoon',
+      riskMultiplier: 1.6,
+      floodZone: true,
+      historicalFailures: 29,
+      affectedNodeIds: [logicalNodeMap.t3, logicalNodeMap.t4, logicalNodeMap.p5, logicalNodeMap.w5, logicalNodeMap.c3],
+    },
+    {
+      zoneName: 'Malad Creek',
+      season: 'monsoon',
+      riskMultiplier: 1.5,
+      floodZone: true,
+      historicalFailures: 22,
+      affectedNodeIds: [logicalNodeMap.p10, logicalNodeMap.t9, logicalNodeMap.w5],
+    },
+    {
+      zoneName: 'Ghatkopar',
+      season: 'monsoon',
+      riskMultiplier: 1.8,
+      floodZone: true,
+      historicalFailures: 35,
+      affectedNodeIds: [logicalNodeMap.w4, logicalNodeMap.t11, logicalNodeMap.p9],
+    },
+    {
+      zoneName: 'Bandra Low-lying',
+      season: 'monsoon',
+      riskMultiplier: 1.3,
+      floodZone: false,
+      historicalFailures: 14,
+      affectedNodeIds: [logicalNodeMap.t1, logicalNodeMap.t10, logicalNodeMap.e6],
+    },
+    {
+      zoneName: 'Worli Seafront',
+      season: 'monsoon',
+      riskMultiplier: 1.4,
+      floodZone: true,
+      historicalFailures: 18,
+      affectedNodeIds: [logicalNodeMap.w8, logicalNodeMap.t1, logicalNodeMap.c2],
+    },
+    {
+      zoneName: 'Colaba Tip',
+      season: 'monsoon',
+      riskMultiplier: 1.2,
+      floodZone: false,
       historicalFailures: 9,
-      zoneName: 'Vikhroli',
+      affectedNodeIds: [logicalNodeMap.p8, logicalNodeMap.e3, logicalNodeMap.e4],
     },
-
-    // ── Bhandup ──
     {
-      nodeId: createdNodes[20]._id,  // Bhandup Complex WTP
+      zoneName: 'Trombay Creek',
       season: 'monsoon',
-      riskMultiplier: 2.0,
+      riskMultiplier: 1.5,
       floodZone: true,
-      historicalFailures: 6,
-      zoneName: 'Bhandup',
+      historicalFailures: 21,
+      affectedNodeIds: [logicalNodeMap.p4, logicalNodeMap.t7],
+    },
+    {
+      zoneName: 'Powai Overflow',
+      season: 'monsoon',
+      riskMultiplier: 1.6,
+      floodZone: true,
+      historicalFailures: 26,
+      affectedNodeIds: [logicalNodeMap.w9, logicalNodeMap.c7, logicalNodeMap.p6],
+    },
+    {
+      zoneName: 'Vikhroli Mangrove',
+      season: 'monsoon',
+      riskMultiplier: 1.3,
+      floodZone: false,
+      historicalFailures: 11,
+      affectedNodeIds: [logicalNodeMap.t8, logicalNodeMap.p4],
     },
   ];
 
   const createdWeatherEvents = await WeatherEvent.insertMany(weatherEvents);
+  const monsoonCount = await WeatherEvent.countDocuments({ season: 'monsoon' });
   console.log(`Inserted ${createdWeatherEvents.length} monsoon weather events`);
+  console.log(`Monsoon WeatherEvent count: ${monsoonCount}`);
+  if (monsoonCount !== 12) {
+    throw new Error(`Expected 12 monsoon weather events, found ${monsoonCount}`);
+  }
 
   // ── Summary ────────────────────────────────────────────────
   console.log('\n─────────────────────────────────────────────');

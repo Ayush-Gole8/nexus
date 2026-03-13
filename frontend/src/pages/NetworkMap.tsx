@@ -1,12 +1,13 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Filter, RotateCcw, Box, GitBranch } from 'lucide-react';
 import InfrastructureGraph from '../components/graph/InfrastructureGraph';
 import MumbaiMap3D from '../components/map3d/MumbaiMap3D';
 import NodeDetailPanel from '../components/graph/NodeDetailPanel';
+import MonsoonPanel from '../components/MonsoonPanel';
 import { getGraphData, getNodes, getDependencies } from '../api/infrastructure';
 import { runBFSSimulate } from '../api/simulation';
-import { useMonsoonData } from '../hooks/useMonsoonData';
+import { useMonsoon } from '../contexts/MonsoonContext';
 import type { GraphData, InfrastructureNode, Dependency } from '../types';
 import { SECTOR_COLORS, SECTOR_LABELS } from '../types';
 
@@ -26,8 +27,19 @@ export default function NetworkMap() {
   const [visibleSectors, setVisibleSectors] = useState<Set<string>>(
     () => new Set(['power', 'water', 'transport', 'telecom', 'emergency']),
   );
-  const { floodZoneIds, monsoonActive, setMonsoonActive, zones } = useMonsoonData();
+  const { monsoonActive, setMonsoonActive, monsoonZones } = useMonsoon();
   const navigate = useNavigate();
+
+  const floodZoneIds = useMemo(() => {
+    const ids = new Set<string>();
+    monsoonZones.forEach((zone) => {
+      zone.affectedNodeIds?.forEach((entry) => {
+        const id = typeof entry === 'string' ? entry : entry?._id;
+        if (id) ids.add(id);
+      });
+    });
+    return ids;
+  }, [monsoonZones]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -166,16 +178,19 @@ export default function NetworkMap() {
               <option value="failed">Failed</option>
             </select>
           </div>
-          <button
-            onClick={() => setMonsoonActive((v) => !v)}
-            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
-              monsoonActive
-                ? 'bg-blue-600/25 border-blue-400/40 text-blue-200'
-                : 'bg-slate-800 border-slate-600 text-slate-300 hover:text-white'
-            }`}
-          >
-            Monsoon {monsoonActive ? 'ON' : 'OFF'}
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setMonsoonActive((v) => !v)}
+              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                monsoonActive
+                  ? 'bg-blue-600/25 border-blue-400/40 text-blue-200'
+                  : 'bg-slate-800 border-slate-600 text-slate-300 hover:text-white'
+              }`}
+            >
+              Monsoon {monsoonActive ? 'ON' : 'OFF'}
+            </button>
+            {monsoonActive ? <MonsoonPanel nodes={allNodes} /> : null}
+          </div>
           <button
             onClick={loadData}
             className="p-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
@@ -256,7 +271,7 @@ export default function NetworkMap() {
             visibleLayers={visibleSectors}
             highlightedNodeIds={highlightedNodeIds}
             monsoonActive={monsoonActive}
-            monsoonZones={zones}
+            monsoonZones={monsoonZones}
             onNodeSelect={setSelectedNode}
           />
         ) : (
