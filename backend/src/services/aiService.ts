@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import { getGeminiModel, isGeminiAvailable } from '../config/gemini';
 import InfrastructureNode from '../models/InfrastructureNode';
+import Dependency from '../models/Dependency';
 
 type ChatMessage = { role: string; content: string };
 
@@ -9,10 +10,13 @@ export interface LiveState {
   criticalCount: number;
   topRiskNode: { name: string; zone: string; uptime: number };
   resilienceIndex: number;
+  detailedNodes: any[];
+  detailedConnections: any[];
 }
 
 async function fetchLiveState(): Promise<LiveState> {
   const nodes = await InfrastructureNode.find().lean();
+  const connections = await Dependency.find().lean();
   const totalNodes = nodes.length;
   const criticalCount = nodes.filter((n) => n.status === 'failed' || n.status === 'degraded').length;
 
@@ -43,27 +47,44 @@ async function fetchLiveState(): Promise<LiveState> {
       uptime: top?.uptime ?? 100,
     },
     resilienceIndex,
+    detailedNodes: nodes.map(n => ({ id: n._id, name: n.name, type: n.type, status: n.status, zone: n.zone, load: n.currentLoad, capacity: n.capacity })),
+    detailedConnections: connections.map(c => ({ source: c.sourceNodeId, target: c.targetNodeId, type: c.dependencyType, strength: c.strength })),
   };
 }
 
 export function buildSystemPrompt(liveState: LiveState, role: string): string {
   const base = [
-    'You are NEXUS AI, an assistant for Mumbai City Infrastructure Intelligence.',
-    `Live system state: ${liveState.totalNodes} nodes tracked, ${liveState.criticalCount} currently critical.`,
-    `Top risk node: ${liveState.topRiskNode.name} in ${liveState.topRiskNode.zone} (uptime: ${liveState.topRiskNode.uptime}%).`,
-    `Overall resilience index: ${liveState.resilienceIndex}/100.`,
-  ].join(' ');
+    'You are NEXUS AI, an advanced infrastructure intelligence and predictive analytics system for Mumbai City.',
+    'Your primary objective is to parse real-time sensor and topological data to provide actionable insights, risk assessments, and impact mitigation strategies.',
+    '--- CURRENT SYSTEM STATE SUMMARY ---',
+    `Total Nodes Monitored: ${liveState.totalNodes}`,
+    `Nodes in Critical/Failed State: ${liveState.criticalCount}`,
+    `Top Risk Node: ${liveState.topRiskNode.name} (Zone: ${liveState.topRiskNode.zone}, Uptime: ${liveState.topRiskNode.uptime}%)`,
+    `Overall City Resilience Index: ${liveState.resilienceIndex}/100`,
+    '--------------------------------------',
+    '--- LIVE INFRASTRUCTURE DATA PAYLOAD ---',
+    `Detailed Nodes List (ID, Name, Sector, Status, Zone, Load vs Capacity): ${JSON.stringify(liveState.detailedNodes)}`,
+    `Topological Connections & Dependencies: ${JSON.stringify(liveState.detailedConnections)}`,
+    '----------------------------------------',
+    'Instructions on using the data payload:',
+    '1. Cross-reference connections with node statuses to predict cascading failures (e.g., a failed power node affecting connected water pumps).',
+    '2. Identify bottlenecks or systemic vulnerabilities in the network topology.',
+    '3. Base your analysis completely on the real-time data provided above.',
+  ].join('\n');
 
   const roleInstructions: Record<string, string> = {
     official:
-      'You are speaking with a City Official. Provide technical detail, exact risk scores, affected node counts, cascade depth, and policy options. Use infrastructure terminology.',
+      '[TARGET AUDIENCE: City Official & Infrastructure Manager]\n' +
+      'Structure your response with technical precision. Provide detailed risk scoring, pinpoint exact cascading failure vectors (using node IDs/names), and suggest strategic policy interventions or maintenance prioritizations. Use standard urban planning and infrastructure terminology.',
     responder:
-      'You are speaking with an Emergency Responder. Focus on ETAs, blocked transport routes, nearest service bases, and resource deployment priorities. Be brief and actionable.',
+      '[TARGET AUDIENCE: Emergency Responder / Disaster Management]\n' +
+      'Structure your response for immediate field action. Identify critical route blockages, degraded transport nodes, and optimal resource deployment paths. Prioritize life-safety implications and immediate service restoration steps. Be extremely brief, clear, and actionable.',
     citizen:
-      'You are speaking with a Citizen. Use plain everyday language. Explain what infrastructure failures mean for water, power, and commute. Do not use technical jargon.',
+      '[TARGET AUDIENCE: Mumbai Citizen]\n' +
+      'Structure your response in plain, reassuring, everyday language. Translate technical failures into direct public impact (e.g., "Water supply in Andheri might be delayed," or "Avoid the Western Express Highway due to flooding"). Provide practical safety advice without unnecessary technical jargon.',
   };
 
-  return `${base} ${roleInstructions[role] ?? roleInstructions.citizen}`;
+  return `${base}\n\n${roleInstructions[role] ?? roleInstructions.citizen}\n\nDeliver your response adhering strictly to the needs of your current audience.`;
 }
 
 function toGeminiContents(messages: ChatMessage[]) {

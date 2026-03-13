@@ -40,7 +40,7 @@ function RoleRoute({ allowedRoles, element }: RoleRouteProps) {
   if (loading) return <div className="flex items-center justify-center h-screen bg-gray-950 text-gray-400">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (!allowedRoles.includes(user.role)) {
-    const fallback = user.role === 'official'
+    const fallback = (user.role === 'official' || user.role === 'admin')
       ? '/dashboard'
       : user.role === 'citizen'
         ? '/citizen'
@@ -70,10 +70,10 @@ export default function App() {
                 />
               }
             />
-            <Route path="dashboard" element={<RoleRoute allowedRoles={['official', 'responder']} element={<Dashboard />} />} />
-            <Route path="infrastructure-manager" element={<RoleRoute allowedRoles={['official']} element={<InfrastructureManager />} />} />
+            <Route path="dashboard" element={<RoleRoute allowedRoles={['official', 'responder', 'admin']} element={<Dashboard />} />} />
+            <Route path="infrastructure-manager" element={<RoleRoute allowedRoles={['official', 'admin']} element={<InfrastructureManager />} />} />
             <Route path="citizen" element={<RoleRoute allowedRoles={['citizen']} element={<CitizenDashboard />} />} />
-            <Route path="emergency-response" element={<RoleRoute allowedRoles={['official', 'responder']} element={<EmergencyResponse />} />} />
+            <Route path="emergency-response" element={<RoleRoute allowedRoles={['official', 'responder', 'admin']} element={<EmergencyResponse />} />} />
             <Route path="network" element={<NetworkMap />} />
             <Route path="cascade" element={<CascadeAnalysis />} />
             <Route path="simulator" element={<ScenarioSimulator />} />
