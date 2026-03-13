@@ -5,6 +5,7 @@ import * as THREE from 'three';
 // @ts-ignore - Ignore module not found if it's a false positive or path mapping issue
 import { SectorModel } from './SectorModels';
 import type { InfrastructureNode, Dependency } from '../../types';
+import type { MonsoonZone } from '../../hooks/useMonsoonData';
 import { SECTOR_COLORS, STATUS_COLORS } from '../../types';
 import {
   MUMBAI_COAST, NAVI_MUMBAI_COAST, THANE_BOUNDARY,
@@ -53,6 +54,7 @@ interface Edge3DData {
   target: string;
   dependencyType: string;
   strength: number;
+  edgeType: 'critical' | 'direct' | 'indirect';
 }
 
 interface MumbaiMap3DProps {
@@ -61,6 +63,9 @@ interface MumbaiMap3DProps {
   sectorFilter: string;
   statusFilter: string;
   visibleLayers?: Set<string>;
+  highlightedNodeIds?: Set<string>;
+  monsoonActive?: boolean;
+  monsoonZones?: MonsoonZone[];
   onNodeSelect?: (node: InfrastructureNode | null) => void;
 }
 
@@ -71,12 +76,14 @@ function NodeObject({
   node,
   isSelected,
   isHovered,
+  isHighlighted,
   onHover,
   onClick,
 }: {
   node: Node3DData;
   isSelected: boolean;
   isHovered: boolean;
+  isHighlighted: boolean;
   onHover: (id: string | null) => void;
   onClick: (id: string) => void;
 }) {
@@ -89,7 +96,7 @@ function NodeObject({
     // Gentle float
     groupRef.current.position.y = Math.sin(clock.elapsedTime * 0.8 + node.position[0]) * 0.03;
     // Scale pulse on hover/select
-    const targetScale = (isSelected || isHovered) ? baseScale * 1.25 : baseScale;
+    const targetScale = (isSelected || isHovered || isHighlighted) ? baseScale * 1.25 : baseScale;
     const curr = groupRef.current.scale.x;
     const next = curr + (targetScale - curr) * 0.1;
     groupRef.current.scale.set(next, next, next);
@@ -142,6 +149,20 @@ function NodeObject({
           side={THREE.DoubleSide}
         />
       </mesh>
+
+      {isHighlighted && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]}>
+          <ringGeometry args={[0.22, 0.30, 32]} />
+          <meshStandardMaterial
+            color="#ff3355"
+            emissive="#ff3355"
+            emissiveIntensity={1.5}
+            transparent
+            opacity={0.75}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
 
       {/* 3D sector model */}
       <SectorModel sector={node.type} subtype={node.subtype} />
@@ -222,11 +243,86 @@ function NodeObject({
 /* ═══════════════════════════════════════════════════════════
    3D Connections between nodes
    ═══════════════════════════════════════════════════════════ */
-/* Edge appearance — critical (strength≥0.8): red, direct (≥0.5): blue, indirect: dark blue */
-function edgeAppearance(strength: number): { color: string; opacity: number; lineWidth: number } {
-  if (strength >= 0.8) return { color: '#ff3366', opacity: 0.8,  lineWidth: 1.8 };
-  if (strength >= 0.5) return { color: '#1a4488', opacity: 0.45, lineWidth: 1.2 };
-  return                        { color: '#334466', opacity: 0.25, lineWidth: 0.7 };
+function createCriticalLabelTexture(text: string): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(255, 51, 85, 0.85)';
+  ctx.fillRect(4, 8, 248, 48);
+  ctx.strokeStyle = '#ff3355';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(4, 8, 248, 48);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 28px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 32);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function edgeAppearance(type: Edge3DData['edgeType']): { color: string; lineWidth: number; dashed: boolean; dashSize?: number; gapSize?: number } {
+  if (type === 'critical') return { color: '#FF3355', lineWidth: 2, dashed: false };
+  if (type === 'direct') return { color: '#1A44AA', lineWidth: 1, dashed: false };
+  return { color: '#223366', lineWidth: 1, dashed: true, dashSize: 0.5, gapSize: 0.4 };
+}
+
+function EdgeLine({ points, edgeType, edgeWeight }: { points: THREE.Vector3[]; edgeType: Edge3DData['edgeType']; edgeWeight: number }) {
+  const lineRef = useRef<any>(null);
+  const style = edgeAppearance(edgeType);
+
+  useFrame(() => {
+    const material = lineRef.current?.material as THREE.Material | undefined;
+    if (!material) return;
+
+    const mat = material as THREE.LineBasicMaterial;
+    const t = Date.now() * 0.002;
+    if (edgeType === 'critical') mat.opacity = 0.5 + 0.3 * Math.sin(t * Math.max(0.4, edgeWeight));
+    else if (edgeType === 'direct') mat.opacity = 0.25 + 0.2 * Math.sin(t);
+    else mat.opacity = 0.1 + 0.08 * Math.sin(t * 0.5);
+
+    mat.transparent = true;
+  });
+
+  return (
+    <Line
+      ref={lineRef}
+      points={points}
+      color={style.color}
+      lineWidth={style.lineWidth}
+      dashed={style.dashed}
+      dashSize={style.dashSize}
+      gapSize={style.gapSize}
+      transparent
+      opacity={edgeType === 'critical' ? 0.6 : edgeType === 'direct' ? 0.3 : 0.12}
+    />
+  );
+}
+
+function CriticalEdgeLabel({ midpoint }: { midpoint: THREE.Vector3 }) {
+  const spriteRef = useRef<THREE.Sprite>(null!);
+  const texture = useMemo(() => createCriticalLabelTexture('CRITICAL'), []);
+  const { camera } = useThree();
+
+  useFrame(() => {
+    if (!spriteRef.current) return;
+    const dist = camera.position.distanceTo(midpoint);
+    spriteRef.current.visible = dist < 30;
+  });
+
+  return (
+    <sprite ref={spriteRef} position={[midpoint.x, midpoint.y + 0.25, midpoint.z]} scale={[0.8, 0.22, 1]}>
+      <spriteMaterial map={texture} transparent depthWrite={false} />
+    </sprite>
+  );
 }
 
 function ConnectionLines({
@@ -243,26 +339,19 @@ function ConnectionLines({
         const tgt = nodeMap.get(edge.target);
         if (!src || !tgt) return null;
 
-        const { color, opacity, lineWidth } = edgeAppearance(edge.strength);
         const midY = 0.12 + edge.strength * 0.18;
-
         const p1 = new THREE.Vector3(...src.position);
         const p3 = new THREE.Vector3(...tgt.position);
         const mid = p1.clone().lerp(p3, 0.5);
         mid.y = midY;
-
         const curve = new THREE.QuadraticBezierCurve3(p1, mid, p3);
         const points = curve.getPoints(24);
 
         return (
-          <Line
-            key={edge.id}
-            points={points}
-            color={color}
-            lineWidth={lineWidth}
-            transparent
-            opacity={opacity}
-          />
+          <group key={edge.id}>
+            <EdgeLine points={points} edgeType={edge.edgeType} edgeWeight={edge.strength} />
+            {edge.edgeType === 'critical' ? <CriticalEdgeLabel midpoint={mid} /> : null}
+          </group>
         );
       })}
     </>
@@ -519,6 +608,93 @@ export function MumbaiGround() {
   );
 }
 
+function RainColumn({ center }: { center: [number, number, number] }) {
+  const particlesRef = useRef<THREE.Mesh[]>([]);
+  const points = useMemo(
+    () =>
+      Array.from({ length: 10 }).map(() => ({
+        x: (Math.random() - 0.5) * 0.8,
+        y: 0.4 + Math.random() * 1.2,
+        z: (Math.random() - 0.5) * 0.8,
+      })),
+    [],
+  );
+
+  useFrame(() => {
+    particlesRef.current.forEach((mesh) => {
+      if (!mesh) return;
+      mesh.position.y -= 0.02;
+      if (mesh.position.y < 0.05) {
+        mesh.position.y = 1.3;
+      }
+    });
+  });
+
+  return (
+    <group position={center}>
+      {points.map((p, i) => (
+        <mesh
+          key={i}
+          ref={(el) => {
+            if (el) particlesRef.current[i] = el;
+          }}
+          position={[p.x, p.y, p.z]}
+        >
+          <sphereGeometry args={[0.05, 8, 8]} />
+          <meshBasicMaterial color="#4ea7ff" transparent opacity={0.6} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function MonsoonOverlayZone({ zone }: { zone: MonsoonZone }) {
+  const ringRef = useRef<THREE.Mesh>(null!);
+
+  const lat =
+    zone.location?.lat ??
+    (typeof zone.nodeId === 'object' && zone.nodeId ? (zone.nodeId as any).location?.lat : undefined);
+  const lng =
+    zone.location?.lng ??
+    (typeof zone.nodeId === 'object' && zone.nodeId ? (zone.nodeId as any).location?.lng : undefined);
+
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+
+  const [x, , z] = latlngToWorld(lat, lng);
+  const radius = Math.max(0.8, (zone.riskMultiplier || 1) * 1.8);
+
+  useFrame(() => {
+    if (!ringRef.current) return;
+    const material = ringRef.current.material as THREE.MeshBasicMaterial;
+    material.opacity = 0.12 + 0.08 * Math.sin(Date.now() * 0.0015);
+  });
+
+  return (
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.02, z]}>
+        <circleGeometry args={[radius, 32]} />
+        <meshBasicMaterial color={0x0044dd} transparent opacity={0.18} />
+      </mesh>
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.022, z]}>
+        <ringGeometry args={[radius, radius * 1.17, 32]} />
+        <meshBasicMaterial color={0x4ea7ff} transparent opacity={0.12} />
+      </mesh>
+      {zone.floodZone ? <RainColumn center={[x, 0.02, z]} /> : null}
+    </group>
+  );
+}
+
+function MonsoonOverlayLayer({ active, zones }: { active: boolean; zones: MonsoonZone[] }) {
+  if (!active) return null;
+  return (
+    <group>
+      {zones.map((zone, idx) => (
+        <MonsoonOverlayZone key={zone._id || `${zone.zoneName || 'zone'}-${idx}`} zone={zone} />
+      ))}
+    </group>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════
    Camera controller – auto-fit to Mumbai & Focus logic
    ═══════════════════════════════════════════════════════════ */
@@ -578,6 +754,9 @@ export default function MumbaiMap3D({
   sectorFilter,
   statusFilter,
   visibleLayers,
+  highlightedNodeIds,
+  monsoonActive = false,
+  monsoonZones = [],
   onNodeSelect,
 }: MumbaiMap3DProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -621,13 +800,24 @@ export default function MumbaiMap3D({
         const tgtId = typeof d.targetNodeId === 'string' ? d.targetNodeId : d.targetNodeId._id;
         return nodeIds.has(srcId) && nodeIds.has(tgtId);
       })
-      .map((d) => ({
-        id: d._id,
-        source: typeof d.sourceNodeId === 'string' ? d.sourceNodeId : d.sourceNodeId._id,
-        target: typeof d.targetNodeId === 'string' ? d.targetNodeId : d.targetNodeId._id,
-        dependencyType: d.dependencyType,
-        strength: d.strength,
-      }));
+      .map((d) => {
+        const strength = d.strength;
+        const edgeType: Edge3DData['edgeType'] =
+          strength >= 0.8
+            ? 'critical'
+            : strength >= 0.5
+              ? 'direct'
+              : 'indirect';
+
+        return {
+          id: d._id,
+          source: typeof d.sourceNodeId === 'string' ? d.sourceNodeId : d.sourceNodeId._id,
+          target: typeof d.targetNodeId === 'string' ? d.targetNodeId : d.targetNodeId._id,
+          dependencyType: d.dependencyType,
+          strength,
+          edgeType,
+        };
+      });
   }, [dependencies, node3DData]);
 
   const handleClick = useCallback((id: string) => {
@@ -685,6 +875,9 @@ export default function MumbaiMap3D({
           <ConnectionLines edges={edgeData} nodeMap={nodeMap} />
           <FlowParticles edges={edgeData} nodeMap={nodeMap} />
 
+          {/* Monsoon flood overlay */}
+          <MonsoonOverlayLayer active={monsoonActive} zones={monsoonZones} />
+
           {/* Nodes */}
           {node3DData.map((node) => (
             <NodeObject
@@ -692,6 +885,7 @@ export default function MumbaiMap3D({
               node={node}
               isSelected={selectedId === node.id}
               isHovered={hoveredId === node.id}
+              isHighlighted={!!highlightedNodeIds?.has(node.id)}
               onHover={setHoveredId}
               onClick={handleClick}
             />

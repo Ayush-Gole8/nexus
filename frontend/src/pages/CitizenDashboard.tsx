@@ -1,238 +1,176 @@
-import { useEffect, useState } from 'react';
-import {
-  Shield, TrendingDown, TrendingUp, Zap, Droplets, Car, Wifi, Heart,
-  MapPin, BarChart3, Activity,
-} from 'lucide-react';
-import { getZoneResilience } from '../api/emergency';
-import { SECTOR_COLORS } from '../types';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckSquare, Square, Shield } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { getCitizenPassport, type CitizenPassport } from '../api/citizen';
+import { useMonsoonData } from '../hooks/useMonsoonData';
 
-interface ZoneScore {
-  zone: string;
-  overallScore: number;
-  sectorScores: Record<string, number>;
-  nodeCount: number;
-  failedCount: number;
-  degradedCount: number;
-}
+const CHECKLIST_KEY = 'citizen-preparedness-checklist-v1';
 
-const SECTOR_ICONS: Record<string, React.ComponentType<any>> = {
-  power: Zap,
-  water: Droplets,
-  transport: Car,
-  telecom: Wifi,
-  emergency: Heart,
-};
-
-function getScoreColor(score: number) {
-  if (score >= 80) return 'var(--st-op)';
-  if (score >= 60) return 'var(--amber)';
-  if (score >= 40) return '#ff6b2b';
-  return 'var(--st-fail)';
-}
-
-function getScoreLabel(score: number) {
-  if (score >= 80) return 'Excellent';
-  if (score >= 60) return 'Good';
-  if (score >= 40) return 'At Risk';
-  return 'Critical';
-}
+const DEFAULT_CHECKLIST = [
+  'Emergency contacts saved',
+  '72-hour water stock ready',
+  'Backup lights and batteries available',
+  'Important documents digitized',
+  'Nearest shelter route known',
+];
 
 export default function CitizenDashboard() {
-  const [zones, setZones] = useState<ZoneScore[]>([]);
+  const { user } = useAuth();
+  const wardId = user?.wardId || user?.zone || 'ward-default';
+
+  const [passport, setPassport] = useState<CitizenPassport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedZone, setSelectedZone] = useState<ZoneScore | null>(null);
+  const [checklistState, setChecklistState] = useState<Record<string, boolean>>({});
+  const { monsoonActive, setMonsoonActive } = useMonsoonData();
 
   useEffect(() => {
-    getZoneResilience()
-      .then((data) => {
-        setZones(data);
-        if (data.length > 0) setSelectedZone(data[0]);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    const saved = localStorage.getItem(CHECKLIST_KEY);
+    if (saved) {
+      try {
+        setChecklistState(JSON.parse(saved));
+      } catch {
+        setChecklistState({});
+      }
+    }
   }, []);
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-96" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-data)' }}>Loading zone data...</div>;
+  useEffect(() => {
+    setLoading(true);
+    getCitizenPassport(wardId)
+      .then(setPassport)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [wardId]);
+
+  const progress = useMemo(() => {
+    const done = DEFAULT_CHECKLIST.filter((item) => checklistState[item]).length;
+    return Math.round((done / DEFAULT_CHECKLIST.length) * 100);
+  }, [checklistState]);
+
+  const toggleChecklist = (item: string) => {
+    setChecklistState((prev) => {
+      const next = { ...prev, [item]: !prev[item] };
+      localStorage.setItem(CHECKLIST_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  if (loading || !passport) {
+    return <div className="text-slate-400">Loading citizen passport...</div>;
   }
 
-  const avgScore = zones.length > 0 ? Math.round(zones.reduce((s, z) => s + z.overallScore, 0) / zones.length) : 0;
-  const worstZone = zones.length > 0 ? zones.reduce((a, b) => (a.overallScore < b.overallScore ? a : b)) : null;
-  const bestZone = zones.length > 0 ? zones.reduce((a, b) => (a.overallScore > b.overallScore ? a : b)) : null;
+  const ringRadius = 62;
+  const circumference = 2 * Math.PI * ringRadius;
+  const offset = circumference * (1 - passport.resilienceScore / 100);
 
-  const cardS = { background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', borderRadius: 10, padding: '14px 16px' };
+  const monsoonColor = passport.monsoonRisk === 'high' ? '#ff3355' : passport.monsoonRisk === 'medium' ? '#f0a500' : '#22d97a';
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-5">
       <div>
-        <h1 className="page-title flex items-center gap-3">
-          <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(34,217,122,0.12)', border: '1px solid rgba(34,217,122,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Shield style={{ width: 18, height: 18, color: 'var(--st-op)' }} />
-          </div>
-          Citizen Impact Dashboard
-        </h1>
-        <p className="page-subtitle">Zone-wise infrastructure resilience and reliability scores for Mumbai</p>
+        <h1 className="text-2xl font-bold text-white">Citizen Dashboard</h1>
+        <p className="text-sm text-slate-400 mt-1">Ward passport and preparedness overview for {passport.wardName}</p>
       </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div style={cardS}>
-          <div style={{ fontFamily: 'var(--font-data)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>City Resilience</div>
-          <div style={{ fontFamily: 'var(--font-data)', fontSize: 28, fontWeight: 700, color: getScoreColor(avgScore) }}>{avgScore}<span style={{ fontSize: 14, color: 'var(--text-muted)' }}>%</span></div>
-          <div style={{ fontSize: 10, marginTop: 4, color: getScoreColor(avgScore) }}>{getScoreLabel(avgScore)}</div>
-        </div>
-        <div style={cardS}>
-          <div style={{ fontFamily: 'var(--font-data)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>Zones Monitored</div>
-          <div style={{ fontFamily: 'var(--font-data)', fontSize: 28, fontWeight: 700, color: 'var(--text-primary)' }}>{zones.length}</div>
-          <div style={{ fontSize: 10, marginTop: 4, color: 'var(--text-muted)' }}>Active areas</div>
-        </div>
-        <div style={cardS}>
-          <div style={{ fontFamily: 'var(--font-data)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <TrendingUp style={{ width: 10, height: 10, color: 'var(--st-op)' }} /> Best Zone
+      <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-4">
+        <div className="space-y-3">
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Shield className="w-4 h-4 text-green-400" />
+              <h3 className="text-xs uppercase tracking-wider text-slate-400">Resilience Score</h3>
+            </div>
+            <div className="flex justify-center">
+              <svg width="170" height="170" viewBox="0 0 170 170">
+                <circle cx="85" cy="85" r={ringRadius} fill="none" stroke="#1e293b" strokeWidth="12" />
+                <circle
+                  cx="85"
+                  cy="85"
+                  r={ringRadius}
+                  fill="none"
+                  stroke={passport.resilienceScore >= 75 ? '#22d97a' : passport.resilienceScore >= 50 ? '#f0a500' : '#ff3355'}
+                  strokeWidth="12"
+                  strokeLinecap="round"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={offset}
+                  transform="rotate(-90 85 85)"
+                  style={{ transition: 'stroke-dashoffset 700ms ease' }}
+                />
+                <text x="85" y="82" textAnchor="middle" fill="#fff" fontSize="28" fontWeight="700">{passport.resilienceScore}%</text>
+                <text x="85" y="102" textAnchor="middle" fill="#94a3b8" fontSize="10">WARD RESILIENCE</text>
+              </svg>
+            </div>
+            <div className="mt-2 text-xs text-slate-500 text-center">Ward ID: {passport.wardId}</div>
           </div>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: 'var(--st-op)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bestZone?.zone || '-'}</div>
-          <div style={{ fontSize: 10, marginTop: 4, color: 'var(--text-muted)' }}>{bestZone ? `${bestZone.overallScore}% resilience` : ''}</div>
-        </div>
-        <div style={cardS}>
-          <div style={{ fontFamily: 'var(--font-data)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <TrendingDown style={{ width: 10, height: 10, color: 'var(--st-fail)' }} /> Needs Attention
-          </div>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: 'var(--st-fail)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{worstZone?.zone || '-'}</div>
-          <div style={{ fontSize: 10, marginTop: 4, color: 'var(--text-muted)' }}>{worstZone ? `${worstZone.overallScore}% resilience` : ''}</div>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Zone List */}
-        <div className="space-y-2">
-          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <MapPin style={{ width: 12, height: 12, color: 'var(--amber)' }} /> Mumbai Zones
-          </h3>
-          <div className="space-y-2">
-            {zones.sort((a, b) => b.overallScore - a.overallScore).map((zone) => {
-              const scoreColor = getScoreColor(zone.overallScore);
-              const isSelected = selectedZone?.zone === zone.zone;
-              return (
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+            <h3 className="text-xs uppercase tracking-wider text-slate-400 mb-2">Monsoon Risk</h3>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ background: `${monsoonColor}22`, border: `1px solid ${monsoonColor}66` }}>
+              <span className="w-2 h-2 rounded-full" style={{ background: monsoonColor }} />
+              <span className="text-xs font-semibold uppercase" style={{ color: monsoonColor }}>{passport.monsoonRisk}</span>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">{passport.floodZone ? 'Flood zone flagged for this ward.' : 'Flood risk currently low.'}</p>
+            <button
+              onClick={() => setMonsoonActive((v) => !v)}
+              className={`mt-2 text-[11px] px-2 py-1 rounded border ${monsoonActive ? 'text-blue-200 border-blue-400/40 bg-blue-600/20' : 'text-slate-300 border-slate-600 bg-slate-900/40'}`}
+            >
+              Monsoon Mode {monsoonActive ? 'ON' : 'OFF'}
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid md:grid-cols-3 gap-3">
+            <RiskCard title="Power Outage Risk" value={`${passport.powerOutageRiskHrs.toFixed(1)} h`} />
+            <RiskCard title="Water Disruption Risk" value={`${passport.waterDisruptionRiskHrs.toFixed(1)} h`} />
+            <RiskCard title="Ambulance ETA" value={`${passport.ambulanceEtaMin.toFixed(0)} min`} />
+          </div>
+
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+            <h3 className="text-xs uppercase tracking-wider text-slate-400 mb-3">Emergency Preparedness Checklist</h3>
+            <div className="space-y-2">
+              {DEFAULT_CHECKLIST.map((item) => (
                 <button
-                  key={zone.zone}
-                  onClick={() => setSelectedZone(zone)}
-                  style={{
-                    width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, cursor: 'pointer', border: 'none',
-                    background: isSelected ? 'var(--amber-glow)' : 'var(--bg-surface)',
-                    outline: isSelected ? '1px solid var(--border-default)' : '1px solid var(--border-hairline)',
-                    transition: 'all 0.15s',
-                  }}
+                  key={item}
+                  onClick={() => toggleChecklist(item)}
+                  className="w-full text-left px-3 py-2 rounded-lg bg-slate-900/40 border border-slate-700 hover:border-slate-600 flex items-center gap-2"
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{zone.zone}</span>
-                    <span style={{ fontFamily: 'var(--font-data)', fontSize: 16, fontWeight: 700, color: scoreColor }}>{zone.overallScore}%</span>
-                  </div>
-                  <div style={{ width: '100%', height: 4, background: 'var(--bg-overlay)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${zone.overallScore}%`, background: scoreColor, borderRadius: 3, boxShadow: `0 0 6px ${scoreColor}60`, transition: 'width 0.6s ease' }} />
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, marginTop: 5, fontFamily: 'var(--font-data)', fontSize: 9 }}>
-                    <span style={{ color: 'var(--text-muted)' }}>{zone.nodeCount} nodes</span>
-                    {zone.failedCount > 0 && <span style={{ color: 'var(--st-fail)' }}>{zone.failedCount} failed</span>}
-                    {zone.degradedCount > 0 && <span style={{ color: 'var(--amber)' }}>{zone.degradedCount} degraded</span>}
-                  </div>
+                  {checklistState[item] ? <CheckSquare className="w-4 h-4 text-green-400" /> : <Square className="w-4 h-4 text-slate-500" />}
+                  <span className={`text-sm ${checklistState[item] ? 'text-green-300' : 'text-slate-300'}`}>{item}</span>
                 </button>
-              );
-            })}
+              ))}
+            </div>
+            <div className="text-xs text-slate-500 mt-3">Preparedness progress: {progress}%</div>
+          </div>
+
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+            <h3 className="text-xs uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5" /> Ward Alert Feed
+            </h3>
+            {passport.alerts.length === 0 ? (
+              <div className="text-xs text-slate-500">No active ward alerts.</div>
+            ) : (
+              <div className="space-y-2 max-h-52 overflow-y-auto">
+                {passport.alerts.map((a) => (
+                  <div key={a.id} className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500">{a.level}</div>
+                    <p className="text-sm text-white mt-0.5">{a.title}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{a.message}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Zone Detail */}
-        <div className="lg:col-span-2">
-          {selectedZone ? (
-            <div className="space-y-4">
-              {/* Zone header + gauge */}
-              <div style={cardS}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                  <div>
-                    <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18, color: 'var(--text-primary)' }}>{selectedZone.zone}</h3>
-                    <p style={{ fontFamily: 'var(--font-data)', fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>Infrastructure Resilience Breakdown</p>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontFamily: 'var(--font-data)', fontSize: 36, fontWeight: 700, color: getScoreColor(selectedZone.overallScore) }}>{selectedZone.overallScore}</div>
-                    <div style={{ fontSize: 10, color: getScoreColor(selectedZone.overallScore) }}>{getScoreLabel(selectedZone.overallScore)}</div>
-                  </div>
-                </div>
-                {/* Circular gauge */}
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-                  <svg width="140" height="140" viewBox="0 0 160 160">
-                    <circle cx="80" cy="80" r="70" fill="none" stroke="var(--bg-overlay)" strokeWidth="10" />
-                    <circle
-                      cx="80" cy="80" r="70" fill="none"
-                      stroke={getScoreColor(selectedZone.overallScore)}
-                      strokeWidth="10" strokeLinecap="round"
-                      strokeDasharray={`${(selectedZone.overallScore / 100) * 440} 440`}
-                      transform="rotate(-90 80 80)"
-                      style={{ filter: `drop-shadow(0 0 6px ${getScoreColor(selectedZone.overallScore)}60)` }}
-                    />
-                    <text x="80" y="76" textAnchor="middle" fill="var(--text-primary)" fontSize="26" fontWeight="bold" fontFamily="JetBrains Mono, monospace">
-                      {selectedZone.overallScore}%
-                    </text>
-                    <text x="80" y="95" textAnchor="middle" fill="var(--text-muted)" fontSize="9" letterSpacing="2">
-                      RESILIENCE
-                    </text>
-                  </svg>
-                </div>
-              </div>
-
-              {/* Sector Breakdown */}
-              <div style={cardS}>
-                <h4 style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <BarChart3 style={{ width: 12, height: 12, color: 'var(--amber)' }} /> Sector-wise Reliability
-                </h4>
-                <div className="space-y-4">
-                  {Object.entries(selectedZone.sectorScores).map(([sector, score]) => {
-                    const Icon = SECTOR_ICONS[sector] || Activity;
-                    const sColor = SECTOR_COLORS[sector] || '#6B7280';
-                    return (
-                      <div key={sector}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div style={{ width: 22, height: 22, borderRadius: 5, background: sColor + '20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <Icon style={{ width: 12, height: 12, color: sColor }} />
-                            </div>
-                            <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{sector}</span>
-                          </div>
-                          <span style={{ fontFamily: 'var(--font-data)', fontSize: 12, fontWeight: 700, color: getScoreColor(score) }}>{score}%</span>
-                        </div>
-                        <div style={{ width: '100%', height: 5, background: 'var(--bg-overlay)', borderRadius: 4, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${score}%`, background: sColor, borderRadius: 4, boxShadow: `0 0 5px ${sColor}40`, transition: 'width 0.7s ease' }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Quick Stats */}
-              <div className="grid grid-cols-3 gap-3">
-                <div style={cardS}>
-                  <div style={{ fontFamily: 'var(--font-data)', fontSize: 26, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center' }}>{selectedZone.nodeCount}</div>
-                  <div style={{ fontFamily: 'var(--font-data)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', textAlign: 'center', marginTop: 4 }}>Total Nodes</div>
-                </div>
-                <div style={{ ...cardS, borderColor: 'rgba(255,51,85,0.2)' }}>
-                  <div style={{ fontFamily: 'var(--font-data)', fontSize: 26, fontWeight: 700, color: 'var(--st-fail)', textAlign: 'center' }}>{selectedZone.failedCount}</div>
-                  <div style={{ fontFamily: 'var(--font-data)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', textAlign: 'center', marginTop: 4 }}>Failed</div>
-                </div>
-                <div style={{ ...cardS, borderColor: 'rgba(240,165,0,0.2)' }}>
-                  <div style={{ fontFamily: 'var(--font-data)', fontSize: 26, fontWeight: 700, color: 'var(--amber)', textAlign: 'center' }}>{selectedZone.degradedCount}</div>
-                  <div style={{ fontFamily: 'var(--font-data)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', textAlign: 'center', marginTop: 4 }}>Degraded</div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="nexus-card" style={{ padding: 48, textAlign: 'center' }}>
-              <Activity style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-              <p style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-data)', fontSize: 13 }}>Select a zone to view details</p>
-            </div>
-          )}
-        </div>
       </div>
+    </div>
+  );
+}
+
+function RiskCard({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+      <div className="text-xs uppercase tracking-wider text-slate-500">{title}</div>
+      <div className="text-2xl font-bold text-white mt-1">{value}</div>
     </div>
   );
 }

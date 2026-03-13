@@ -1,145 +1,118 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Plus, Play, Eye, Trash2, FlaskConical, ChevronDown, ChevronUp } from 'lucide-react';
-import InfrastructureGraph from '../components/graph/InfrastructureGraph';
-import { getGraphData, getNodes } from '../api/infrastructure';
-import { getScenarios, createScenario, deleteScenario, runSimulation, getSimulationResults } from '../api/simulation';
-import type { GraphData, Scenario, SimulationResult, InfrastructureNode, CascadeResult } from '../types';
-import { SECTOR_COLORS, SECTOR_LABELS } from '../types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Play, Activity, Waves, PlugZap, Droplets, TrainFront, RadioTower } from 'lucide-react';
+import MumbaiMap3D from '../components/map3d/MumbaiMap3D';
+import { getNodes, getDependencies } from '../api/infrastructure';
+import { runBFSSimulate, type BFSSimulateResult } from '../api/simulation';
+import type { InfrastructureNode, Dependency } from '../types';
+import { SECTOR_COLORS } from '../types';
 
-const SCENARIO_TYPES = [
-  'power_outage',
-  'road_disruption',
-  'telecom_failure',
-  'water_disruption',
-  'extreme_weather',
-  'natural_disaster',
-  'equipment_failure',
-  'cyber_attack',
-  'cascading_failure',
-] as const;
-
-const TYPE_LABELS: Record<string, string> = {
-  power_outage: 'Power Outage',
-  road_disruption: 'Road Disruption',
-  telecom_failure: 'Telecom Failure',
-  water_disruption: 'Water Disruption',
-  extreme_weather: 'Extreme Weather',
-  natural_disaster: 'Natural Disaster',
-  equipment_failure: 'Equipment Failure',
-  cyber_attack: 'Cyber Attack',
-  cascading_failure: 'Cascading Failure',
+type ScenarioCard = {
+  id: 'power' | 'water' | 'transport' | 'telecom' | 'weather';
+  label: string;
+  icon: React.ComponentType<any>;
+  color: string;
 };
 
-export default function ScenarioSimulator() {
-  const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [nodes, setNodes] = useState<InfrastructureNode[]>([]);
-  const [graphData, setGraphData] = useState<GraphData | null>(null);
-  const [activeResult, setActiveResult] = useState<SimulationResult | null>(null);
-  const [cascadeOverlay, setCascadeOverlay] = useState<CascadeResult | null>(null);
-  const [expandedScenario, setExpandedScenario] = useState<string | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [running, setRunning] = useState<string | null>(null);
-  const [currentStep, setCurrentStep] = useState<number | undefined>(undefined);
+const SCENARIO_CARDS: ScenarioCard[] = [
+  { id: 'power', label: 'Power', icon: PlugZap, color: '#ffe234' },
+  { id: 'water', label: 'Water', icon: Droplets, color: '#00d4b8' },
+  { id: 'transport', label: 'Transport', icon: TrainFront, color: '#ff6b2b' },
+  { id: 'telecom', label: 'Telecom', icon: RadioTower, color: '#7b68ff' },
+  { id: 'weather', label: 'Weather', icon: Waves, color: '#4ea7ff' },
+];
 
-  // Create form state
-  const [formName, setFormName] = useState('');
-  const [formDesc, setFormDesc] = useState('');
-  const [formType, setFormType] = useState<string>(SCENARIO_TYPES[0]);
-  const [formNodes, setFormNodes] = useState<string[]>([]);
+interface PropagationLogEntry {
+  timestamp: string;
+  step: number;
+  message: string;
+}
+
+export default function ScenarioSimulator() {
+  const [nodes, setNodes] = useState<InfrastructureNode[]>([]);
+  const [dependencies, setDependencies] = useState<Dependency[]>([]);
+  const [activeScenario, setActiveScenario] = useState<ScenarioCard['id']>('power');
+  const [originNodeId, setOriginNodeId] = useState('');
+  const [magnitude, setMagnitude] = useState(80);
+  const [resilience, setResilience] = useState(30);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<BFSSimulateResult | null>(null);
+  const [currentStep, setCurrentStep] = useState(-1);
+  const [highlightedBatch, setHighlightedBatch] = useState<Set<string>>(new Set());
+  const [logEntries, setLogEntries] = useState<PropagationLogEntry[]>([]);
+
+  const timerRef = useRef<number | null>(null);
+
+  const loadData = useCallback(async () => {
+    const [nodeList, depList] = await Promise.all([getNodes(), getDependencies()]);
+    setNodes(nodeList);
+    setDependencies(depList);
+    if (nodeList.length > 0) setOriginNodeId((prev) => prev || nodeList[0]._id);
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+    return () => {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+    };
+  }, [loadData]);
 
-  const loadData = async () => {
-    const [scenarioList, nodeList, graph] = await Promise.all([
-      getScenarios(),
-      getNodes(),
-      getGraphData(),
+  const scenarioNodes = useMemo(() => {
+    if (activeScenario === 'weather') return nodes;
+    return nodes.filter((n) => n.type === activeScenario);
+  }, [nodes, activeScenario]);
+
+  const appendLog = (step: number, batch: string[]) => {
+    const names = batch
+      .map((id) => nodes.find((n) => n._id === id)?.name || id)
+      .slice(0, 4)
+      .join(', ');
+    const suffix = batch.length > 4 ? ` +${batch.length - 4} more` : '';
+
+    setLogEntries((prev) => [
+      ...prev,
+      {
+        timestamp: new Date().toLocaleTimeString(),
+        step,
+        message: `Step ${step}: propagated to ${batch.length} node(s) — ${names}${suffix}`,
+      },
     ]);
-    setScenarios(scenarioList);
-    setNodes(nodeList);
-    setGraphData(graph);
   };
 
-  const handleCreate = useCallback(async () => {
-    if (!formName.trim() || formNodes.length === 0) return;
-    await createScenario({
-      name: formName,
-      description: formDesc,
-      type: formType,
-      initialFailures: formNodes.map((id) => ({ nodeId: id, failureType: 'complete' })),
-      parameters: {},
-    } as any);
-    setFormName('');
-    setFormDesc('');
-    setFormType(SCENARIO_TYPES[0]);
-    setFormNodes([]);
-    setShowCreateForm(false);
-    const updated = await getScenarios();
-    setScenarios(updated);
-  }, [formName, formDesc, formType, formNodes]);
+  const animatePropagation = (sim: BFSSimulateResult) => {
+    if (timerRef.current) window.clearInterval(timerRef.current);
 
-  const handleRun = useCallback(async (id: string) => {
-    setRunning(id);
-    setCascadeOverlay(null);
-    setActiveResult(null);
-    try {
-      await runSimulation(id);
-      const results = await getSimulationResults(id);
-      if (results.length > 0) {
-        const latest = results[results.length - 1];
-        setActiveResult(latest);
-        // Convert to cascade overlay format
-        setCascadeOverlay({
-          impactedNodes: latest.impactedNodes.map((n: any) => ({
-            nodeId: n.nodeId,
-            name: n.name || n.nodeId,
-            type: n.type || 'unknown',
-            subtype: n.subtype || '',
-            impactLevel: n.impactLevel || 'cascading',
-            newStatus: n.newStatus || 'failed',
-            impactScore: n.impactScore || 1,
-            propagationStep: n.propagationStep || 0,
-          })),
-          propagationPaths: latest.propagationPaths || [],
-          summary: latest.summary,
-        });
-        setCurrentStep(latest.summary.maxPropagationDepth);
+    setCurrentStep(-1);
+    setHighlightedBatch(new Set());
+    setLogEntries([]);
+
+    let step = 0;
+    timerRef.current = window.setInterval(() => {
+      if (step >= sim.propagationSteps.length) {
+        if (timerRef.current) window.clearInterval(timerRef.current);
+        timerRef.current = null;
+        setHighlightedBatch(new Set());
+        return;
       }
+
+      const batch = sim.propagationSteps[step] || [];
+      setCurrentStep(step);
+      setHighlightedBatch(new Set(batch));
+      appendLog(step, batch);
+      step += 1;
+    }, 600);
+  };
+
+  const handleRun = async () => {
+    if (!originNodeId) return;
+    setRunning(true);
+    try {
+      const sim = await runBFSSimulate(originNodeId, magnitude / 100, resilience / 100);
+      setResult(sim);
+      animatePropagation(sim);
     } catch (err) {
       console.error('Simulation failed:', err);
     } finally {
-      setRunning(null);
-    }
-  }, []);
-
-  const handleDelete = async (id: string) => {
-    await deleteScenario(id);
-    setScenarios((prev) => prev.filter((s) => s._id !== id));
-    if (expandedScenario === id) setExpandedScenario(null);
-  };
-
-  const handleViewResult = async (id: string) => {
-    const results = await getSimulationResults(id);
-    if (results.length > 0) {
-      const latest = results[results.length - 1];
-      setActiveResult(latest);
-      setCascadeOverlay({
-        impactedNodes: latest.impactedNodes.map((n: any) => ({
-          nodeId: n.nodeId,
-          name: n.name || n.nodeId,
-          type: n.type || 'unknown',
-          subtype: n.subtype || '',
-          impactLevel: n.impactLevel || 'cascading',
-          newStatus: n.newStatus || 'failed',
-          impactScore: n.impactScore || 1,
-          propagationStep: n.propagationStep || 0,
-        })),
-        propagationPaths: latest.propagationPaths || [],
-        summary: latest.summary,
-      });
-      setCurrentStep(latest.summary.maxPropagationDepth);
+      setRunning(false);
     }
   };
 
@@ -148,205 +121,149 @@ export default function ScenarioSimulator() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Scenario Simulator</h1>
-          <p className="text-sm text-slate-400 mt-1">Create and run failure scenarios to test infrastructure resilience</p>
+          <p className="text-sm text-slate-400 mt-1">Run BFS propagation from an origin node and animate each cascade step on the 3D city map</p>
         </div>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          New Scenario
-        </button>
       </div>
 
-      <div className="flex gap-4" style={{ height: 'calc(100% - 60px)' }}>
-        {/* Left Panel */}
-        <div className="w-96 flex-shrink-0 space-y-4 overflow-y-auto">
-          {/* Create Form */}
-          {showCreateForm && (
-            <div className="bg-slate-800/50 border border-blue-500/30 rounded-xl p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-blue-400">Create Scenario</h3>
-              <input
-                type="text"
-                placeholder="Scenario name"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-sm text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
-              />
-              <textarea
-                placeholder="Description (optional)"
-                value={formDesc}
-                onChange={(e) => setFormDesc(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-sm text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 resize-none"
-                rows={2}
-              />
-              <select
-                value={formType}
-                onChange={(e) => setFormType(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
-              >
-                {SCENARIO_TYPES.map((t) => (
-                  <option key={t} value={t}>{TYPE_LABELS[t]}</option>
-                ))}
-              </select>
-
-              <div>
-                <p className="text-xs text-slate-400 mb-2">Initial Failure Nodes</p>
-                <div className="max-h-36 overflow-y-auto space-y-1">
-                  {nodes.map((node) => (
-                    <label
-                      key={node._id}
-                      className={`flex items-center gap-2 p-1.5 rounded cursor-pointer text-xs ${
-                        formNodes.includes(node._id) ? 'bg-red-600/20 text-red-300' : 'text-slate-400 hover:bg-slate-700/50'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={formNodes.includes(node._id)}
-                        onChange={() =>
-                          setFormNodes((prev) =>
-                            prev.includes(node._id)
-                              ? prev.filter((id) => id !== node._id)
-                              : [...prev, node._id]
-                          )
-                        }
-                        className="rounded border-slate-600"
-                      />
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: SECTOR_COLORS[node.type] }} />
-                      {node.name}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={handleCreate}
-                  disabled={!formName.trim() || formNodes.length === 0}
-                  className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Create
-                </button>
-                <button
-                  onClick={() => setShowCreateForm(false)}
-                  className="px-3 py-2 bg-slate-700 text-slate-300 rounded-lg text-sm hover:bg-slate-600 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
+      <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-4 h-[calc(100%-56px)]">
+        <div className="space-y-3 overflow-y-auto pr-1">
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Scenario Cards</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {SCENARIO_CARDS.map((card) => {
+                const Icon = card.icon;
+                const active = activeScenario === card.id;
+                return (
+                  <button
+                    key={card.id}
+                    onClick={() => setActiveScenario(card.id)}
+                    className="rounded-lg px-2.5 py-2 text-left border transition-colors"
+                    style={{
+                      borderColor: active ? `${card.color}88` : '#334155',
+                      background: active ? `${card.color}18` : 'rgba(15, 23, 42, 0.35)',
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon className="w-4 h-4" style={{ color: card.color }} />
+                      <span className="text-xs font-medium" style={{ color: active ? card.color : '#cbd5e1' }}>
+                        {card.label}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-          )}
-
-          {/* Scenario List */}
-          <div className="space-y-2">
-            {scenarios.length === 0 && !showCreateForm && (
-              <p className="text-slate-500 text-sm text-center py-8">No scenarios yet. Create one to get started.</p>
-            )}
-            {scenarios.map((scenario) => (
-              <div key={scenario._id} className="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
-                <div
-                  className="p-3 flex items-center justify-between cursor-pointer hover:bg-slate-700/30 transition-colors"
-                  onClick={() => setExpandedScenario(expandedScenario === scenario._id ? null : scenario._id)}
-                >
-                  <div className="flex items-center gap-2">
-                    <FlaskConical className="w-4 h-4 text-purple-400" />
-                    <div>
-                      <p className="text-sm font-medium text-white">{scenario.name}</p>
-                      <p className="text-xs text-slate-500">{TYPE_LABELS[scenario.type] || scenario.type}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className={`px-2 py-0.5 rounded text-xs ${
-                      scenario.status === 'completed'
-                        ? 'bg-green-600/20 text-green-400'
-                        : scenario.status === 'running'
-                        ? 'bg-yellow-600/20 text-yellow-400'
-                        : 'bg-slate-600/40 text-slate-400'
-                    }`}>
-                      {scenario.status || 'draft'}
-                    </span>
-                    {expandedScenario === scenario._id ? (
-                      <ChevronUp className="w-4 h-4 text-slate-400" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-slate-400" />
-                    )}
-                  </div>
-                </div>
-
-                {expandedScenario === scenario._id && (
-                  <div className="px-3 pb-3 border-t border-slate-700 pt-3 space-y-2">
-                    {scenario.description && (
-                      <p className="text-xs text-slate-400">{scenario.description}</p>
-                    )}
-                    <p className="text-xs text-slate-500">
-                      Initial failures: {scenario.initialFailures.length} node(s)
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleRun(scenario._id)}
-                        disabled={running === scenario._id}
-                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-xs hover:bg-green-600/30 disabled:opacity-50 transition-colors"
-                      >
-                        <Play className="w-3.5 h-3.5" />
-                        {running === scenario._id ? 'Running...' : 'Run'}
-                      </button>
-                      <button
-                        onClick={() => handleViewResult(scenario._id)}
-                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs hover:bg-blue-600/30 transition-colors"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        View
-                      </button>
-                      <button
-                        onClick={() => handleDelete(scenario._id)}
-                        className="px-3 py-1.5 bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg text-xs hover:bg-red-600/30 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
           </div>
 
-          {/* Active Result Summary */}
-          {activeResult && (
-            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-slate-300">Simulation Result</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-700/50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-red-400">{activeResult.summary.totalAffected}</p>
-                  <p className="text-xs text-slate-400">Affected</p>
-                </div>
-                <div className="bg-slate-700/50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-orange-400">{activeResult.summary.maxPropagationDepth}</p>
-                  <p className="text-xs text-slate-400">Max Depth</p>
-                </div>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 uppercase mb-2">By Sector</p>
-                {Object.entries(activeResult.summary.bySector).map(([sector, count]) => (
-                  <div key={sector} className="flex items-center justify-between py-1">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: SECTOR_COLORS[sector] }} />
-                      <span className="text-xs text-slate-400">{SECTOR_LABELS[sector] || sector}</span>
-                    </div>
-                    <span className="text-xs font-mono text-white">{count as number}</span>
-                  </div>
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3 space-y-3">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Configuration</h3>
+
+            <div>
+              <label className="text-[11px] text-slate-400">Origin Node</label>
+              <select
+                value={originNodeId}
+                onChange={(e) => setOriginNodeId(e.target.value)}
+                className="mt-1 w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-xs text-white"
+              >
+                {scenarioNodes.map((n) => (
+                  <option key={n._id} value={n._id}>{n.name}</option>
                 ))}
+              </select>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                <span>Magnitude</span>
+                <span className="font-mono text-white">{magnitude}%</span>
               </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={magnitude}
+                onChange={(e) => setMagnitude(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                <span>Resilience</span>
+                <span className="font-mono text-white">{resilience}%</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={resilience}
+                onChange={(e) => setResilience(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+
+            <button
+              onClick={handleRun}
+              disabled={running || !originNodeId}
+              className="w-full px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              <Play className="w-4 h-4" />
+              {running ? 'Running...' : 'Run Simulation'}
+            </button>
+          </div>
+
+          {result && (
+            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3 space-y-2">
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Stats</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-slate-700/40 rounded p-2 text-center">
+                  <div className="text-lg font-bold text-red-400">{result.affectedNodes.length}</div>
+                  <div className="text-[10px] text-slate-500 uppercase">Affected Nodes</div>
+                </div>
+                <div className="bg-slate-700/40 rounded p-2 text-center">
+                  <div className="text-lg font-bold text-orange-400">{result.propagationSteps.length}</div>
+                  <div className="text-[10px] text-slate-500 uppercase">Cascade Depth</div>
+                </div>
+                <div className="bg-slate-700/40 rounded p-2 text-center">
+                  <div className="text-lg font-bold text-blue-400">{result.populationImpactPct.toFixed(1)}%</div>
+                  <div className="text-[10px] text-slate-500 uppercase">Pop. Impact</div>
+                </div>
+                <div className="bg-slate-700/40 rounded p-2 text-center">
+                  <div className="text-lg font-bold text-cyan-400">{result.recoveryHours}h</div>
+                  <div className="text-[10px] text-slate-500 uppercase">Recovery</div>
+                </div>
+              </div>
+              <div className="text-xs text-slate-500 pt-1">Current animation step: <span className="text-slate-300 font-mono">{Math.max(0, currentStep)}</span></div>
             </div>
           )}
+
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Propagation Log</h3>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {logEntries.length === 0 ? (
+                <div className="text-xs text-slate-500">No events yet.</div>
+              ) : logEntries.map((entry, idx) => (
+                <div key={`${entry.timestamp}-${idx}`} className="text-xs text-slate-300 bg-slate-700/30 rounded px-2 py-1.5">
+                  <span className="text-slate-500 mr-2 font-mono">[{entry.timestamp}]</span>
+                  {entry.message}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Right - Graph */}
-        <div className="flex-1 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
-          <InfrastructureGraph
-            graphData={graphData}
-            cascadeResult={cascadeOverlay}
-            currentStep={currentStep}
+        <div className="border border-[rgba(60,40,40,0.4)] rounded-xl overflow-hidden relative" style={{ background: '#050810' }}>
+          <MumbaiMap3D
+            nodes={nodes}
+            dependencies={dependencies}
+            sectorFilter="all"
+            statusFilter="all"
+            highlightedNodeIds={highlightedBatch}
           />
+
+          <div className="absolute top-3 left-3 text-xs text-slate-400 bg-slate-900/70 border border-slate-700 rounded px-2 py-1 flex items-center gap-2">
+            <Activity className="w-3.5 h-3.5" style={{ color: SECTOR_COLORS[activeScenario === 'weather' ? 'transport' : activeScenario] || '#f43f5e' }} />
+            <span>Step animation: 600ms batch highlight</span>
+          </div>
         </div>
       </div>
     </div>

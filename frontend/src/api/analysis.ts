@@ -15,3 +15,16 @@ export async function getCriticalNodes(limit?: number): Promise<CriticalNode[]> 
   const { data } = await api.get('/critical-nodes', { params: limit ? { limit } : {} });
   return data;
 }
+
+export async function getVulnerability(): Promise<Record<string, number>> {
+  const { data } = await api.get('/vulnerability');
+  return data;
+}
+
+export async function getImpactMatrix(): Promise<{
+  sectors: string[];
+  matrix: Record<string, Record<string, number>>;
+}> {
+  const { data } = await api.get('/impact-matrix');
+  return data;
+}

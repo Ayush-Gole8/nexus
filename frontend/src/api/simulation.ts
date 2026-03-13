@@ -44,11 +44,30 @@ export async function getSimulationResults(scenarioId: string): Promise<Simulati
   return data;
 }
 
+export interface BFSSimulateOptions {
+  originNodeId: string;
+  magnitude?: number;
+  resilience?: number;
+  monsoonActive?: boolean;
+  rainfall_mm?: number;
+}
+
 export async function runBFSSimulate(
-  originNodeId: string,
+  originNodeIdOrOptions: string | BFSSimulateOptions,
   magnitude = 0.8,
   resilience = 0.3,
 ): Promise<BFSSimulateResult> {
-  const { data } = await bfsApi.post('/simulate', { originNodeId, magnitude, resilience });
+  const payload =
+    typeof originNodeIdOrOptions === 'string'
+      ? { originNodeId: originNodeIdOrOptions, magnitude, resilience }
+      : {
+          originNodeId: originNodeIdOrOptions.originNodeId,
+          magnitude: originNodeIdOrOptions.magnitude ?? 0.8,
+          resilience: originNodeIdOrOptions.resilience ?? 0.3,
+          monsoonActive: originNodeIdOrOptions.monsoonActive,
+          rainfall_mm: originNodeIdOrOptions.rainfall_mm,
+        };
+
+  const { data } = await bfsApi.post('/simulate', payload);
   return data;
 }

@@ -1,7 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Sparkles, Bot, User, AlertTriangle, Shield, TrendingUp, Loader2 } from 'lucide-react';
-import { getAIStatus, getAIInsights, chatWithAI } from '../api/ai';
-import type { AIInsights as AIInsightsType } from '../types';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Send, Bot, User, AlertTriangle, Loader2, Activity, ShieldAlert } from 'lucide-react';
+import { getAIStatus, getAlertFeed, chatWithAI, type AlertFeedItem } from '../api/ai';
+import { getNodes, getDependencies } from '../api/infrastructure';
+import { getCriticalNodes } from '../api/analysis';
+import { getDashboardMetrics } from '../api/dashboard';
 
 interface Message {
   id: string;
@@ -10,78 +12,143 @@ interface Message {
   timestamp: Date;
 }
 
-const QUICK_ACTIONS = [
-  { label: 'Analyze critical risks', prompt: 'What are the most critical infrastructure risks in the network right now?' },
-  { label: 'Sector health summary', prompt: 'Give me a summary of the health status across all infrastructure sectors.' },
-  { label: 'Recommend improvements', prompt: 'What infrastructure improvements would most increase overall resilience?' },
-  { label: 'Vulnerability assessment', prompt: 'Which nodes are most vulnerable to cascading failures and why?' },
-];
+interface MetricsPanelData {
+  resilienceIndex: number;
+  activeAlerts: number;
+  criticalNodesCount: number;
+  avgRecoveryTime: number;
+}
 
 export default function AIInsights() {
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
-  const [insights, setInsights] = useState<AIInsightsType | null>(null);
-  const [loadingInsights, setLoadingInsights] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [alerts, setAlerts] = useState<AlertFeedItem[]>([]);
+  const [metrics, setMetrics] = useState<MetricsPanelData>({
+    resilienceIndex: 0,
+    activeAlerts: 0,
+    criticalNodesCount: 0,
+    avgRecoveryTime: 12,
+  });
+
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getAIStatus().then((s) => setAiAvailable(s.available)).catch(() => setAiAvailable(false));
   }, []);
 
+  const refreshAlerts = useCallback(async () => {
+    const feed = await getAlertFeed();
+    setAlerts(feed);
+  }, []);
+
+  const refreshMetrics = useCallback(async () => {
+    const [dashboard, critical] = await Promise.all([
+      getDashboardMetrics().catch(() => null),
+      getCriticalNodes(10).catch(() => []),
+    ]);
+
+    const resilienceIndex = Math.round((dashboard?.resilienceScore ?? 0) * 10) / 10;
+    const criticalNodesCount = Array.isArray(critical) ? critical.length : 0;
+
+    // Use local estimate if no backend recovery aggregate is available.
+    const avgRecoveryTime = Math.max(4, Math.round((20 - resilienceIndex / 5) * 10) / 10);
+
+    setMetrics((prev) => ({
+      ...prev,
+      resilienceIndex,
+      criticalNodesCount,
+      avgRecoveryTime,
+      activeAlerts: alerts.length,
+    }));
+  }, [alerts.length]);
+
+  useEffect(() => {
+    refreshAlerts();
+    const timer = window.setInterval(refreshAlerts, 30000);
+    return () => window.clearInterval(timer);
+  }, [refreshAlerts]);
+
+  useEffect(() => {
+    refreshMetrics();
+  }, [refreshMetrics]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleGetInsights = useCallback(async () => {
-    setLoadingInsights(true);
-    try {
-      const data = await getAIInsights();
-      setInsights(data);
-    } catch (err) {
-      console.error('Failed to get insights:', err);
-    } finally {
-      setLoadingInsights(false);
-    }
-  }, []);
+  const injectLiveInfraState = async () => {
+    const [nodes, deps] = await Promise.all([
+      getNodes().catch(() => []),
+      getDependencies().catch(() => []),
+    ]);
 
-  const handleSend = useCallback(async (text?: string) => {
-    const msg = text || input.trim();
-    if (!msg) return;
+    const byStatus = nodes.reduce<Record<string, number>>((acc, n) => {
+      acc[n.status] = (acc[n.status] || 0) + 1;
+      return acc;
+    }, {});
+
+    const criticalTop = [...nodes]
+      .sort((a, b) => b.criticalityScore - a.criticalityScore)
+      .slice(0, 5)
+      .map((n) => `${n.name}(${n.criticalityScore})`)
+      .join(', ');
+
+    return [
+      'SYSTEM CONTEXT (LIVE INFRA STATE):',
+      `nodes=${nodes.length}`,
+      `dependencies=${deps.length}`,
+      `status_breakdown=${JSON.stringify(byStatus)}`,
+      `top_critical=${criticalTop}`,
+    ].join('\n');
+  };
+
+  const streamAssistantText = async (fullText: string) => {
+    const id = `${Date.now()}-assistant`;
+    const newMsg: Message = { id, role: 'assistant', content: '', timestamp: new Date() };
+    setMessages((prev) => [...prev, newMsg]);
+
+    for (let i = 1; i <= fullText.length; i += 8) {
+      const slice = fullText.slice(0, i);
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, content: slice } : m)));
+      await new Promise((r) => setTimeout(r, 18));
+    }
+  };
+
+  const sendMessage = useCallback(async () => {
+    const raw = input.trim();
+    if (!raw || sending || !aiAvailable) return;
+
     setInput('');
+    setSending(true);
 
     const userMsg: Message = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-user`,
       role: 'user',
-      content: msg,
+      content: raw,
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, userMsg]);
-    setSending(true);
 
     try {
+      const context = await injectLiveInfraState();
       const history = messages.map((m) => ({ role: m.role, content: m.content }));
-      const response = await chatWithAI(msg, history);
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
+      const response = await chatWithAI(`${context}\n\nUSER QUERY:\n${raw}`, history);
+      await streamAssistantText(response);
     } catch (err) {
-      const errMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Sorry, I encountered an error processing your request. Please check your Gemini API key and try again.',
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errMsg]);
+      console.error(err);
+      await streamAssistantText('Unable to generate AI response right now. Please try again in a moment.');
     } finally {
       setSending(false);
     }
-  }, [input, messages]);
+  }, [input, sending, aiAvailable, messages]);
+
+  const quickPrompts = useMemo(() => [
+    'Identify top 3 cascading failure risks right now.',
+    'Suggest immediate mitigation actions for critical nodes.',
+    'Summarize transport and power resilience in plain language.',
+  ], []);
 
   if (aiAvailable === null) {
     return (
@@ -96,137 +163,67 @@ export default function AIInsights() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">AI Insights</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Gemini-powered infrastructure analysis and recommendations
-          </p>
+          <p className="text-sm text-slate-400 mt-1">Live-state assisted AI analysis with streaming chat and alert feed</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${
-            aiAvailable ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'
-          }`}>
-            <div className={`w-2 h-2 rounded-full ${aiAvailable ? 'bg-green-400' : 'bg-red-400'}`} />
-            {aiAvailable ? 'AI Connected' : 'AI Unavailable'}
-          </div>
-          <button
-            onClick={handleGetInsights}
-            disabled={loadingInsights || !aiAvailable}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors"
-          >
-            <Sparkles className="w-4 h-4" />
-            {loadingInsights ? 'Analyzing...' : 'Generate Insights'}
-          </button>
+        <div className={`px-3 py-1.5 rounded-full text-xs font-medium ${aiAvailable ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>
+          {aiAvailable ? 'AI Connected' : 'AI Unavailable'}
         </div>
       </div>
 
-      <div className="flex gap-4" style={{ height: 'calc(100% - 60px)' }}>
-        {/* Left - Insights Panel */}
-        <div className="w-96 flex-shrink-0 space-y-4 overflow-y-auto">
-          {!aiAvailable && (
-            <div className="bg-yellow-600/10 border border-yellow-500/30 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="w-4 h-4 text-yellow-400" />
-                <p className="text-sm font-medium text-yellow-400">API Key Required</p>
-              </div>
-              <p className="text-xs text-yellow-300/80">
-                Set your GEMINI_API_KEY in the backend .env file to enable AI features.
-              </p>
+      <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-4 h-[calc(100%-56px)]">
+        <div className="space-y-3 overflow-y-auto pr-1">
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+            <h3 className="text-xs uppercase tracking-wider text-slate-400 mb-2">Metrics</h3>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <Metric label="Resilience Index" value={`${metrics.resilienceIndex}%`} color="#22d97a" />
+              <Metric label="Active Alerts" value={String(alerts.length || metrics.activeAlerts)} color="#ff3355" />
+              <Metric label="Critical Nodes" value={String(metrics.criticalNodesCount)} color="#f0a500" />
+              <Metric label="Avg Recovery" value={`${metrics.avgRecoveryTime}h`} color="#4ea7ff" />
             </div>
-          )}
+          </div>
 
-          {insights && (
-            <>
-              {/* Summary */}
-              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-purple-400 mb-2 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" />
-                  Summary
-                </h3>
-                <p className="text-sm text-slate-300 leading-relaxed">{insights.summary}</p>
-              </div>
-
-              {/* Risks */}
-              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-red-400 mb-3 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" />
-                  Key Risks
-                </h3>
-                <ul className="space-y-2">
-                  {insights.risks.map((risk, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
-                      <span className="text-red-400 mt-0.5">•</span>
-                      {risk}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Recommendations */}
-              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-green-400 mb-3 flex items-center gap-2">
-                  <Shield className="w-4 h-4" />
-                  Recommendations
-                </h3>
-                <ul className="space-y-2">
-                  {insights.recommendations.map((rec, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
-                      <span className="text-green-400 mt-0.5">{i + 1}.</span>
-                      {rec}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Optimization Opportunities */}
-              {insights.optimizationOpportunities && insights.optimizationOpportunities.length > 0 && (
-                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="text-sm font-semibold text-blue-400 mb-3 flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4" />
-                    Optimization Opportunities
-                  </h3>
-                  <ul className="space-y-2">
-                    {insights.optimizationOpportunities.map((opp, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
-                        <span className="text-blue-400 mt-0.5">→</span>
-                        {opp}
-                      </li>
-                    ))}
-                  </ul>
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+            <h3 className="text-xs uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5" /> Alert Feed (30s polling)
+            </h3>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {alerts.length === 0 ? (
+                <div className="text-xs text-slate-500">No active alerts from /api/alerts.</div>
+              ) : alerts.map((a) => (
+                <div key={a.id} className="rounded-lg border border-slate-700 bg-slate-900/40 px-2.5 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] uppercase tracking-wider ${a.level === 'critical' ? 'text-red-400' : a.level === 'high' ? 'text-orange-400' : 'text-blue-400'}`}>
+                      {a.level}
+                    </span>
+                    <span className="text-[10px] text-slate-500">{new Date(a.timestamp).toLocaleTimeString()}</span>
+                  </div>
+                  <p className="text-xs text-white mt-1">{a.title}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{a.message}</p>
                 </div>
-              )}
-            </>
-          )}
-
-          {!insights && aiAvailable && (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Sparkles className="w-12 h-12 text-slate-600 mb-3" />
-              <p className="text-sm text-slate-500">Click "Generate Insights" to analyze your infrastructure</p>
+              ))}
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Right - Chat */}
-        <div className="flex-1 flex flex-col bg-slate-800/30 border border-slate-700 rounded-xl overflow-hidden">
-          {/* Chat Header */}
+        <div className="flex flex-col bg-slate-800/30 border border-slate-700 rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-700 flex items-center gap-2">
             <Bot className="w-5 h-5 text-purple-400" />
             <h3 className="text-sm font-semibold text-white">Infrastructure Chat</h3>
           </div>
 
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <Bot className="w-16 h-16 text-slate-600 mb-4" />
-                <p className="text-slate-400 text-sm mb-6">Ask me anything about your infrastructure network</p>
-                <div className="grid grid-cols-2 gap-2 max-w-md">
-                  {QUICK_ACTIONS.map((action) => (
+              <div className="text-center py-10">
+                <Activity className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                <p className="text-sm text-slate-400 mb-3">Prompt includes live node/dependency status automatically.</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {quickPrompts.map((p) => (
                     <button
-                      key={action.label}
-                      onClick={() => handleSend(action.prompt)}
-                      disabled={!aiAvailable}
-                      className="px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-xs text-slate-300 hover:bg-slate-700 hover:border-slate-500 transition-colors disabled:opacity-50 text-left"
+                      key={p}
+                      onClick={() => setInput(p)}
+                      className="text-xs px-2.5 py-1.5 rounded-full border border-slate-600 text-slate-300 hover:bg-slate-700/50"
                     >
-                      {action.label}
+                      {p}
                     </button>
                   ))}
                 </div>
@@ -234,78 +231,44 @@ export default function AIInsights() {
             )}
 
             {messages.map((msg) => (
-              <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
-                {msg.role === 'assistant' && (
-                  <div className="w-8 h-8 rounded-full bg-purple-600/20 flex items-center justify-center flex-shrink-0">
-                    <Bot className="w-4 h-4 text-purple-400" />
-                  </div>
-                )}
-                <div
-                  className={`max-w-[75%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                    msg.role === 'user'
-                      ? 'bg-blue-600 text-white rounded-br-md'
-                      : 'bg-slate-700/50 text-slate-200 rounded-bl-md'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
+              <div key={msg.id} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                {msg.role === 'assistant' && <Bot className="w-7 h-7 p-1.5 rounded-full bg-purple-600/20 text-purple-300" />}
+                <div className={`max-w-[78%] px-3 py-2 rounded-xl text-sm whitespace-pre-wrap ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-700/50 text-slate-200'}`}>
+                  {msg.content}
                 </div>
-                {msg.role === 'user' && (
-                  <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center flex-shrink-0">
-                    <User className="w-4 h-4 text-blue-400" />
-                  </div>
-                )}
+                {msg.role === 'user' && <User className="w-7 h-7 p-1.5 rounded-full bg-blue-600/20 text-blue-300" />}
               </div>
             ))}
 
             {sending && (
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-purple-600/20 flex items-center justify-center flex-shrink-0">
-                  <Bot className="w-4 h-4 text-purple-400" />
-                </div>
-                <div className="bg-slate-700/50 px-4 py-3 rounded-2xl rounded-bl-md">
-                  <div className="flex gap-1">
-                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                </div>
+              <div className="flex items-center gap-2 text-slate-500 text-xs">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Generating response...
               </div>
             )}
             <div ref={chatEndRef} />
           </div>
 
-          {/* Quick Actions (when chat has messages) */}
-          {messages.length > 0 && (
-            <div className="px-4 py-2 border-t border-slate-700/50 flex gap-2 overflow-x-auto">
-              {QUICK_ACTIONS.map((action) => (
-                <button
-                  key={action.label}
-                  onClick={() => handleSend(action.prompt)}
-                  disabled={!aiAvailable || sending}
-                  className="px-2.5 py-1 bg-slate-700/50 border border-slate-600 rounded-full text-xs text-slate-400 hover:text-slate-300 hover:border-slate-500 transition-colors whitespace-nowrap disabled:opacity-50"
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Input */}
           <div className="p-4 border-t border-slate-700">
+            {!aiAvailable && (
+              <div className="mb-2 text-xs text-red-300 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Configure Gemini key to enable chat.
+              </div>
+            )}
             <div className="flex gap-2">
               <input
-                type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                placeholder={aiAvailable ? 'Ask about infrastructure...' : 'AI unavailable — configure API key'}
+                onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
                 disabled={!aiAvailable || sending}
-                className="flex-1 px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-sm text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                placeholder="Ask about resilience, risk, or cascade strategy..."
+                className="flex-1 px-3 py-2.5 bg-slate-700 border border-slate-600 rounded-lg text-sm text-white placeholder-slate-400"
               />
               <button
-                onClick={() => handleSend()}
+                onClick={sendMessage}
                 disabled={!input.trim() || !aiAvailable || sending}
-                className="px-4 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                className="px-3 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
               </button>
@@ -313,6 +276,15 @@ export default function AIInsights() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Metric({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="bg-slate-900/35 rounded-lg px-2.5 py-2 border border-slate-700">
+      <div className="text-[10px] text-slate-500 uppercase tracking-wider">{label}</div>
+      <div className="text-base font-semibold mt-1" style={{ color }}>{value}</div>
     </div>
   );
 }
