@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import InfrastructureNode from '../models/InfrastructureNode';
 import Dependency from '../models/Dependency';
 import { authenticate, requireOfficial } from '../middleware/auth';
+import { broadcastEvent } from './events';
 
 const router = Router();
 
@@ -55,6 +56,14 @@ router.post('/nodes', authenticate, requireOfficial, async (req: Request, res: R
       return res.status(400).json({ error: 'capacity must be a non-negative number' });
     }
     const node = await InfrastructureNode.create(req.body);
+    broadcastEvent('node-added', {
+      nodeId: node._id.toString(),
+      name: node.name,
+      type: node.type,
+      status: node.status,
+      zone: node.zone,
+      timestamp: Date.now(),
+    });
     res.status(201).json(node);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -78,6 +87,14 @@ router.patch('/nodes/:id', authenticate, requireOfficial, async (req: Request, r
       { new: true, runValidators: true }
     );
     if (!node) return res.status(404).json({ error: 'Node not found' });
+
+    broadcastEvent('node-status-change', {
+      nodeId: node._id.toString(),
+      newStatus: node.status,
+      type: node.type,
+      timestamp: Date.now(),
+    });
+
     res.json(node);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -206,6 +223,14 @@ router.get('/graph', async (_req: Request, res: Response) => {
       emergency: '#ff4d6d',
     };
 
+    const dependencyColors: Record<string, string> = {
+      power_supply: '#fbbf24',
+      water_supply: '#38bdf8',
+      data_link: '#a78bfa',
+      physical_access: '#34d399',
+      operational: '#94a3b8',
+    };
+
     // Group nodes by sector for clustered layout
     const sectorGroups: Record<string, any[]> = {};
     for (const node of nodes) {
@@ -277,21 +302,23 @@ router.get('/graph', async (_req: Request, res: Response) => {
     });
 
     const rfEdges = deps.map((dep: any) => {
-      const sourceType = nodes.find((n: any) => n._id.toString() === dep.sourceNodeId.toString())?.type;
+      const depType = dep.dependencyType as string;
+      const strength = typeof dep.strength === 'number' ? dep.strength : Number(dep.strength) || 0;
+      const edgeColor = dependencyColors[depType] || '#94A3B8';
       return {
         id: dep._id.toString(),
         source: dep.sourceNodeId.toString(),
         target: dep.targetNodeId.toString(),
         type: 'smoothstep',
-        animated: dep.strength > 0.7,
+        animated: strength >= 0.92,
         style: {
-          stroke: sectorColors[sourceType as string] || '#94A3B8',
-          strokeWidth: Math.max(1, dep.strength * 3),
-          opacity: 0.5 + dep.strength * 0.3,
+          stroke: edgeColor,
+          strokeWidth: Math.max(1, 1 + strength * 2.2),
+          opacity: 0.4 + strength * 0.45,
         },
         data: {
-          dependencyType: dep.dependencyType,
-          strength: dep.strength,
+          dependencyType: depType,
+          strength,
         },
       };
     });

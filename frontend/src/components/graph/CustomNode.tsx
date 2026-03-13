@@ -167,6 +167,14 @@ function CustomNode({ data, selected }: NodeProps) {
 
   const activeColor = cascadeColor || color;
   const loadPct = Math.min(100, Math.round((nodeData.currentLoad / Math.max(1, nodeData.capacity)) * 100));
+  const monsoonRisk = typeof nodeData.monsoonRisk === 'number' ? Math.max(0, Math.min(100, nodeData.monsoonRisk)) : null;
+  const monsoonColor = monsoonRisk == null
+    ? null
+    : monsoonRisk >= 75
+      ? '#EF4444'
+      : monsoonRisk >= 45
+        ? '#F59E0B'
+        : '#38BDF8';
 
   return (
     <div
@@ -176,6 +184,9 @@ function CustomNode({ data, selected }: NodeProps) {
         '--node-color-20': activeColor + '33',
         '--node-color-40': activeColor + '66',
         '--node-color-60': activeColor + '99',
+        boxShadow: monsoonColor
+          ? `0 0 0 1px ${monsoonColor}55, 0 0 16px ${monsoonColor}35`
+          : undefined,
       } as React.CSSProperties}
     >
       <Handle
@@ -275,6 +286,18 @@ function CustomNode({ data, selected }: NodeProps) {
           {Math.round(nodeData.impactScore * 100)}
         </div>
       )}
+
+      {monsoonRisk != null && nodeData.monsoonActive ? (
+        <div
+          className="absolute -bottom-2 left-2 px-1.5 py-[1px] rounded text-[9px] font-bold border border-slate-900 z-20"
+          style={{
+            backgroundColor: `${(monsoonColor ?? '#38BDF8')}33`,
+            color: monsoonColor ?? '#38BDF8',
+          }}
+        >
+          RISK {Math.round(monsoonRisk)}%
+        </div>
+      ) : null}
 
       <Handle
         type="source"

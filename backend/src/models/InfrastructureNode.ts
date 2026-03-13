@@ -7,7 +7,7 @@ export interface IInfrastructureNode extends Document {
   zone: string;
   operator?: string;
   location: { lat: number; lng: number };
-  status: 'operational' | 'degraded' | 'failed' | 'maintenance' | 'unknown';
+  status: 'operational' | 'degraded' | 'failed' | 'critical' | 'maintenance' | 'unknown';
   capacity: number;
   currentLoad: number;
   criticalityScore: number;
@@ -34,7 +34,7 @@ const InfrastructureNodeSchema = new Schema<IInfrastructureNode>(
     status: {
       type: String,
       default: 'operational',
-      enum: ['operational', 'degraded', 'failed', 'maintenance', 'unknown'],
+      enum: ['operational', 'degraded', 'failed', 'critical', 'maintenance', 'unknown'],
     },
     capacity: { type: Number, default: 100 },
     currentLoad: { type: Number, default: 0 },
