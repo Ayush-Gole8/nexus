@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Filter, RotateCcw, Box, GitBranch, Maximize2 } from 'lucide-react';
+import { Filter, RotateCcw, Box, GitBranch } from 'lucide-react';
 import InfrastructureGraph from '../components/graph/InfrastructureGraph';
 import MumbaiMap3D from '../components/map3d/MumbaiMap3D';
 import NodeDetailPanel from '../components/graph/NodeDetailPanel';
 import { getGraphData, getNodes, getDependencies } from '../api/infrastructure';
+import { runBFSSimulate } from '../api/simulation';
+import { useMonsoonData } from '../hooks/useMonsoonData';
 import type { GraphData, InfrastructureNode, Dependency } from '../types';
 import { SECTOR_COLORS, SECTOR_LABELS } from '../types';
 
@@ -20,9 +22,11 @@ export default function NetworkMap() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
   const [selectedNode, setSelectedNode] = useState<InfrastructureNode | null>(null);
+  const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string>>(new Set());
   const [visibleSectors, setVisibleSectors] = useState<Set<string>>(
     () => new Set(['power', 'water', 'transport', 'telecom', 'emergency']),
   );
+  const { floodZoneIds, monsoonActive, setMonsoonActive, zones } = useMonsoonData();
   const navigate = useNavigate();
 
   const loadData = useCallback(async () => {
@@ -82,6 +86,23 @@ export default function NetworkMap() {
     },
     [navigate]
   );
+
+  const handleNodeSimulate = useCallback(async (nodeId: string) => {
+    try {
+      const result = await runBFSSimulate({
+        originNodeId: nodeId,
+        magnitude: 0.7,
+        resilience: 0.3,
+        monsoonActive,
+        rainfall_mm: 150,
+      });
+      const highlighted = new Set<string>(result.affectedNodes || []);
+      setHighlightedNodeIds(highlighted);
+      window.setTimeout(() => setHighlightedNodeIds(new Set()), 8000);
+    } catch (err) {
+      console.error('Failed to simulate cascade', err);
+    }
+  }, [monsoonActive]);
 
   return (
     <div className="space-y-4 h-[calc(100vh-7rem)]">
@@ -146,6 +167,16 @@ export default function NetworkMap() {
             </select>
           </div>
           <button
+            onClick={() => setMonsoonActive((v) => !v)}
+            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+              monsoonActive
+                ? 'bg-blue-600/25 border-blue-400/40 text-blue-200'
+                : 'bg-slate-800 border-slate-600 text-slate-300 hover:text-white'
+            }`}
+          >
+            Monsoon {monsoonActive ? 'ON' : 'OFF'}
+          </button>
+          <button
             onClick={loadData}
             className="p-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
           >
@@ -199,6 +230,7 @@ export default function NetworkMap() {
             </button>
             <span className="text-slate-600 mx-1">|</span>
             <span className="text-[10px] text-slate-500">Drag to orbit · Scroll to zoom · Click node for details</span>
+            {monsoonActive ? <span className="text-[10px] text-amber-400">· Monsoon risk overlay active</span> : null}
           </>
         ) : null}
       </div>
@@ -222,6 +254,9 @@ export default function NetworkMap() {
             sectorFilter={sectorFilter}
             statusFilter={statusFilter}
             visibleLayers={visibleSectors}
+            highlightedNodeIds={highlightedNodeIds}
+            monsoonActive={monsoonActive}
+            monsoonZones={zones}
             onNodeSelect={setSelectedNode}
           />
         ) : (
@@ -237,8 +272,11 @@ export default function NetworkMap() {
             node={selectedNode}
             onClose={() => setSelectedNode(null)}
             onAnalyzeCascade={handleAnalyzeCascade}
-            dependencies={allDependencies}
             allNodes={allNodes}
+            allEdges={allDependencies}
+            monsoonActive={monsoonActive}
+            floodZoneIds={floodZoneIds}
+            onSimulate={handleNodeSimulate}
           />
         )}
       </div>

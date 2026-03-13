@@ -4,9 +4,10 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, Html, Stars } from '@react-three/drei';
 import * as THREE from 'three';
 import { Zap, Play, SkipForward, RotateCcw, Box, GitBranch, AlertTriangle, Users, Shield, TrendingDown } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line as RLine, CartesianGrid, Legend } from 'recharts';
 import InfrastructureGraph from '../components/graph/InfrastructureGraph';
 import { getGraphData, getNodes, getDependencies } from '../api/infrastructure';
-import { runCascadeAnalysis } from '../api/analysis';
+import { runCascadeAnalysis, getCriticalNodes, getImpactMatrix, getVulnerability } from '../api/analysis';
 import type { GraphData, CascadeResult, InfrastructureNode, Dependency } from '../types';
 import { SECTOR_COLORS, SECTOR_LABELS, STATUS_COLORS } from '../types';
 import { SectorModel } from '../components/map3d/SectorModels';
@@ -258,10 +259,33 @@ export default function CascadeAnalysis() {
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [sectorFilter, setSectorFilter] = useState('all');
+  const [vulnerability, setVulnerability] = useState<Record<string, number>>({});
+  const [criticalRanked, setCriticalRanked] = useState<Array<{ nodeId: string; name: string; score: number; type: string }>>([]);
+  const [impactMatrix, setImpactMatrix] = useState<{ sectors: string[]; matrix: Record<string, Record<string, number>> }>({
+    sectors: [],
+    matrix: {},
+  });
 
   useEffect(() => {
-    Promise.all([getGraphData(), getNodes(), getDependencies()]).then(([graph, nodeList, deps]) => {
-      setGraphData(graph); setAllNodes(nodeList); setAllDeps(deps);
+    Promise.all([
+      getGraphData(),
+      getNodes(),
+      getDependencies(),
+      getVulnerability(),
+      getCriticalNodes(10),
+      getImpactMatrix(),
+    ]).then(([graph, nodeList, deps, vuln, critical, matrix]) => {
+      setGraphData(graph);
+      setAllNodes(nodeList);
+      setAllDeps(deps);
+      setVulnerability(vuln);
+      setCriticalRanked(critical.map((n: any) => ({
+        nodeId: n.nodeId,
+        name: n.name,
+        type: n.type,
+        score: n.score ?? n.compositeScore ?? 0,
+      })));
+      setImpactMatrix(matrix);
     });
   }, []);
 
@@ -320,6 +344,51 @@ export default function CascadeAnalysis() {
   }, [allNodes, sectorFilter]);
 
   const sr = cascadeResult?.summary;
+  const vulnerabilityChartData = useMemo(() =>
+    Object.entries(vulnerability).map(([sector, value]) => ({
+      sector,
+      vulnerability: Math.round(value * 100),
+    })), [vulnerability]);
+
+  const timelineData = useMemo(() => {
+    if (!cascadeResult) return [];
+    const max = cascadeResult.summary.maxPropagationDepth;
+    const sectors = ['power', 'water', 'transport', 'telecom', 'emergency'];
+    const perStepImpacts = new Map<number, Record<string, number>>();
+
+    for (const n of cascadeResult.impactedNodes) {
+      const step = n.propagationStep ?? 0;
+      if (!perStepImpacts.has(step)) perStepImpacts.set(step, {});
+      const bucket = perStepImpacts.get(step)!;
+      bucket[n.type] = (bucket[n.type] || 0) + (n.newStatus === 'failed' ? 18 : 10);
+    }
+
+    const health = Object.fromEntries(sectors.map((s) => [s, 100])) as Record<string, number>;
+    const result: Array<Record<string, number>> = [];
+
+    for (let step = 0; step <= max; step++) {
+      const impact = perStepImpacts.get(step) || {};
+      for (const sector of sectors) {
+        health[sector] = Math.max(0, health[sector] - (impact[sector] || 0));
+      }
+      result.push({
+        step,
+        power: health.power,
+        water: health.water,
+        transport: health.transport,
+        telecom: health.telecom,
+        emergency: health.emergency,
+      });
+    }
+    return result;
+  }, [cascadeResult]);
+
+  const matrixCellColor = (v: number) => {
+    if (v >= 80) return 'rgba(255, 51, 102, 0.45)';
+    if (v >= 50) return 'rgba(240, 165, 0, 0.40)';
+    if (v >= 20) return 'rgba(51, 102, 153, 0.40)';
+    return 'rgba(51, 68, 102, 0.18)';
+  };
 
   return (
     <div className="space-y-3 h-[calc(100vh-7rem)]">
@@ -514,6 +583,100 @@ export default function CascadeAnalysis() {
               </div>
             </div>
           )}
+
+          {/* Vulnerability bar chart */}
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Sector Vulnerability</h3>
+            <div style={{ width: '100%', height: 180 }}>
+              <ResponsiveContainer>
+                <BarChart data={vulnerabilityChartData} layout="vertical" margin={{ top: 8, right: 12, left: 20, bottom: 0 }}>
+                  <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                  <YAxis type="category" dataKey="sector" tick={{ fill: '#cbd5e1', fontSize: 10 }} width={68} />
+                  <Tooltip formatter={(value: number) => [`${value}%`, 'vulnerability']} />
+                  <Bar dataKey="vulnerability" radius={[0, 4, 4, 0]}>
+                    {vulnerabilityChartData.map((row) => (
+                      <Cell key={row.sector} fill={SECTOR_COLORS[row.sector] || '#64748b'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Impact matrix 5x5 */}
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Impact Matrix (5x5)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[10px]">
+                <thead>
+                  <tr>
+                    <th className="text-left text-slate-500 px-1.5 py-1">Src \ Tgt</th>
+                    {impactMatrix.sectors.map((s) => (
+                      <th key={s} className="text-slate-400 px-1.5 py-1 text-center uppercase">{s.slice(0, 3)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {impactMatrix.sectors.map((src) => (
+                    <tr key={src}>
+                      <td className="text-slate-400 px-1.5 py-1 uppercase">{src.slice(0, 3)}</td>
+                      {impactMatrix.sectors.map((tgt) => {
+                        const value = impactMatrix.matrix[src]?.[tgt] ?? 0;
+                        return (
+                          <td
+                            key={`${src}-${tgt}`}
+                            className="text-center px-1.5 py-1 text-white font-mono rounded"
+                            style={{ background: matrixCellColor(value) }}
+                          >
+                            {value.toFixed(1)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Critical nodes list */}
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Critical Nodes Ranking</h3>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {criticalRanked.map((n, idx) => (
+                <div key={n.nodeId} className="flex items-center justify-between px-2 py-1 rounded bg-slate-700/30">
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-white truncate">{idx + 1}. {n.name}</div>
+                    <div className="text-[10px] text-slate-500 uppercase">{n.type}</div>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-600/20 text-red-300 font-mono">
+                    {n.score.toFixed(3)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Cascade timeline */}
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Cascade Timeline (Sector Health)</h3>
+            <div style={{ width: '100%', height: 220 }}>
+              <ResponsiveContainer>
+                <LineChart data={timelineData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
+                  <XAxis dataKey="step" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                  <YAxis domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: '10px' }} />
+                  <RLine type="monotone" dataKey="power" stroke={SECTOR_COLORS.power} dot={false} strokeWidth={2} />
+                  <RLine type="monotone" dataKey="water" stroke={SECTOR_COLORS.water} dot={false} strokeWidth={2} />
+                  <RLine type="monotone" dataKey="transport" stroke={SECTOR_COLORS.transport} dot={false} strokeWidth={2} />
+                  <RLine type="monotone" dataKey="telecom" stroke={SECTOR_COLORS.telecom} dot={false} strokeWidth={2} />
+                  <RLine type="monotone" dataKey="emergency" stroke={SECTOR_COLORS.emergency} dot={false} strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         </div>
 
         {/* ── Right - Visualization ── */}

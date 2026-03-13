@@ -20,3 +20,21 @@ export async function chatWithAI(
   const { data } = await api.post('/chat', { message, history });
   return data.response;
 }
+
+export interface AlertFeedItem {
+  id: string;
+  level: 'low' | 'medium' | 'high' | 'critical';
+  title: string;
+  message: string;
+  timestamp: string;
+}
+
+export async function getAlertFeed(): Promise<AlertFeedItem[]> {
+  try {
+    const { data } = await api.get('/alerts');
+    return Array.isArray(data) ? data : [];
+  } catch {
+    // Fallback when /api/alerts is not yet available.
+    return [];
+  }
+}

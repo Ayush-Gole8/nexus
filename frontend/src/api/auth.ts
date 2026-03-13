@@ -6,8 +6,10 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
-  role: 'citizen' | 'official' | 'admin';
-  zone: string;
+  role: 'citizen' | 'official' | 'responder' | 'admin';
+  zone?: string;
+  wardId?: string;
+  badgeNumber?: string;
 }
 
 export interface AuthResponse {

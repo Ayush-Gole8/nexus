@@ -1,268 +1,132 @@
-import { useState } from 'react';
-import {
-  Flame, Ambulance, Shield, MapPin, Clock, Navigation,
-  AlertTriangle, Phone, Activity,
-} from 'lucide-react';
-import { getEmergencyResponse } from '../api/emergency';
+import { useEffect, useMemo, useState } from 'react';
+import { Flame, Ambulance, Shield, AlertTriangle, Navigation, Route } from 'lucide-react';
+import { getNodes } from '../api/infrastructure';
+import { simulateIncident, type EmergencyETA, type SimulateIncidentResult } from '../api/emergency';
+import type { InfrastructureNode } from '../types';
+import { STATUS_COLORS } from '../types';
 
-interface ResponseUnit {
-  name: string;
-  type: string;
-  distance: number;
-  eta: number;
-  status: string;
-  location: { lat: number; lng: number };
-}
+type ServiceType = 'fire' | 'ambulance' | 'police';
 
-interface EmergencyData {
-  fire: ResponseUnit[];
-  ambulance: ResponseUnit[];
-  police: ResponseUnit[];
-  nearestOverall: { type: string; name: string; eta: number };
-}
-
-const EMERGENCY_TYPES = [
-  { id: 'fire', label: 'Fire Emergency', icon: Flame, color: '#ff6b2b' },
-  { id: 'medical', label: 'Medical Emergency', icon: Ambulance, color: '#22d97a' },
-  { id: 'security', label: 'Security Incident', icon: Shield, color: '#7b68ff' },
-  { id: 'disaster', label: 'Natural Disaster', icon: AlertTriangle, color: '#f0a500' },
-];
-
-// Predefined Mumbai locations for easy selection
-const MUMBAI_LOCATIONS = [
-  { name: 'Colaba (South Mumbai)', lat: 18.9067, lng: 72.8147 },
-  { name: 'CSMT Station', lat: 18.9398, lng: 72.8355 },
-  { name: 'BKC Complex', lat: 19.0590, lng: 72.8652 },
-  { name: 'Andheri West', lat: 19.1364, lng: 72.8296 },
-  { name: 'Powai (IIT Area)', lat: 19.1176, lng: 72.9060 },
-  { name: 'Dadar Junction', lat: 19.0176, lng: 72.8420 },
-  { name: 'Bandra Reclamation', lat: 19.0440, lng: 72.8206 },
-  { name: 'Thane Station', lat: 19.1860, lng: 72.9750 },
-  { name: 'Navi Mumbai (Vashi)', lat: 19.0771, lng: 72.9986 },
-  { name: 'Mulund East', lat: 19.1726, lng: 72.9566 },
-];
+const SERVICE_META: Record<ServiceType, { icon: React.ComponentType<any>; color: string; label: string }> = {
+  fire: { icon: Flame, color: '#ff6b2b', label: 'Fire Service' },
+  ambulance: { icon: Ambulance, color: '#22d97a', label: 'Ambulance' },
+  police: { icon: Shield, color: '#7b68ff', label: 'Police' },
+};
 
 export default function EmergencyResponse() {
-  const [selectedType, setSelectedType] = useState('fire');
-  const [selectedLocation, setSelectedLocation] = useState(MUMBAI_LOCATIONS[0]);
-  const [customLat, setCustomLat] = useState('');
-  const [customLng, setCustomLng] = useState('');
-  const [useCustom, setUseCustom] = useState(false);
-  const [response, setResponse] = useState<EmergencyData | null>(null);
+  const [nodes, setNodes] = useState<InfrastructureNode[]>([]);
+  const [selectedNode, setSelectedNode] = useState('');
+  const [selectedType, setSelectedType] = useState('incident');
   const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<SimulateIncidentResult | null>(null);
 
-  const handleDispatch = async () => {
+  useEffect(() => {
+    getNodes().then((n) => {
+      setNodes(n);
+      if (n.length > 0) setSelectedNode(n[0]._id);
+    }).catch(console.error);
+  }, []);
+
+  const nodeById = useMemo(() => {
+    const m = new Map<string, InfrastructureNode>();
+    nodes.forEach((n) => m.set(n._id, n));
+    return m;
+  }, [nodes]);
+
+  const runSimulation = async (nodeId: string) => {
+    if (!nodeId) return;
     setLoading(true);
     try {
-      const lat = useCustom ? parseFloat(customLat) : selectedLocation.lat;
-      const lng = useCustom ? parseFloat(customLng) : selectedLocation.lng;
-      const data = await getEmergencyResponse(lat, lng, selectedType);
-      setResponse(data);
+      const data = await simulateIncident(nodeId, selectedType);
+      setResult(data);
     } catch (err) {
-      console.error('Emergency dispatch error:', err);
+      console.error('Incident simulation failed:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const formatETA = (minutes: number) => {
-    if (minutes < 1) return '<1 min';
-    if (minutes < 60) return `${Math.round(minutes)} min`;
-    return `${Math.floor(minutes / 60)}h ${Math.round(minutes % 60)}m`;
-  };
-
-  const getETAColor = (minutes: number) => {
-    if (minutes <= 5) return 'var(--st-op)';
-    if (minutes <= 10) return 'var(--amber)';
-    if (minutes <= 20) return '#ff6b2b';
-    return 'var(--st-fail)';
-  };
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title flex items-center gap-3">
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(255,107,43,0.15)', border: '1px solid rgba(255,107,43,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Flame style={{ width: 18, height: 18, color: '#ff6b2b' }} />
-            </div>
-            Emergency Response System
-          </h1>
-          <p className="page-subtitle">Real-time ETA predictions for emergency services across Mumbai</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: 'rgba(34,217,122,0.08)', border: '1px solid rgba(34,217,122,0.2)', borderRadius: 8 }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--st-op)', boxShadow: '0 0 6px var(--st-op)', animation: 'pulse 2s infinite' }} />
-          <span style={{ fontFamily: 'var(--font-data)', fontSize: 10, letterSpacing: '0.1em', color: 'var(--st-op)', textTransform: 'uppercase' }}>Live System</span>
-        </div>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold text-white">Emergency Response</h1>
+        <p className="text-sm text-slate-400 mt-1">Select an incident node to simulate fire, ambulance, and police ETAs with route constraints</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Panel - Emergency Configuration */}
-        <div className="space-y-4">
-          {/* Emergency Type Selection */}
-          <div className="nexus-card" style={{ padding: '16px' }}>
-            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 12 }}>Emergency Type</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {EMERGENCY_TYPES.map(({ id, label, icon: Icon, color }) => (
-                <button
-                  key={id}
-                  onClick={() => setSelectedType(id)}
-                  style={{
-                    padding: '10px 8px',
-                    borderRadius: 8,
-                    border: `1px solid ${selectedType === id ? color : 'var(--border-hairline)'}`,
-                    backgroundColor: selectedType === id ? color + '18' : 'var(--bg-elevated)',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  <div style={{ width: 28, height: 28, borderRadius: 6, background: color + '25', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                    <Icon style={{ width: 14, height: 14, color }} />
-                  </div>
-                  <span style={{ fontFamily: 'var(--font-data)', fontSize: 10, color: selectedType === id ? color : 'var(--text-secondary)' }}>{label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+      <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-4">
+        <div className="space-y-3">
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 space-y-3">
+            <h3 className="text-xs uppercase tracking-wider text-slate-400">Incident Setup</h3>
 
-          {/* Location Selection */}
-          <div className="nexus-card" style={{ padding: '16px' }}>
-            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <MapPin style={{ width: 12, height: 12, color: 'var(--amber)' }} />
-              Incident Location
-            </h3>
-
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <button
-                onClick={() => setUseCustom(false)}
-                style={{ padding: '5px 12px', borderRadius: 6, fontSize: 11, fontFamily: 'var(--font-data)', cursor: 'pointer', border: !useCustom ? '1px solid var(--border-default)' : '1px solid transparent', background: !useCustom ? 'var(--amber-glow)' : 'transparent', color: !useCustom ? 'var(--amber)' : 'var(--text-muted)' }}
+            <div>
+              <label className="text-xs text-slate-400">Incident Type</label>
+              <select
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+                className="mt-1 w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white"
               >
-                Preset
-              </button>
-              <button
-                onClick={() => setUseCustom(true)}
-                style={{ padding: '5px 12px', borderRadius: 6, fontSize: 11, fontFamily: 'var(--font-data)', cursor: 'pointer', border: useCustom ? '1px solid var(--border-default)' : '1px solid transparent', background: useCustom ? 'var(--amber-glow)' : 'transparent', color: useCustom ? 'var(--amber)' : 'var(--text-muted)' }}
-              >
-                Custom
-              </button>
+                <option value="incident">General Incident</option>
+                <option value="fire">Fire</option>
+                <option value="medical">Medical</option>
+                <option value="security">Security</option>
+                <option value="disaster">Disaster</option>
+              </select>
             </div>
 
-            {!useCustom ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 192, overflowY: 'auto' }}>
-                {MUMBAI_LOCATIONS.map((loc) => (
-                  <button
-                    key={loc.name}
-                    onClick={() => setSelectedLocation(loc)}
-                    style={{
-                      textAlign: 'left', padding: '7px 10px', borderRadius: 6, cursor: 'pointer', border: 'none',
-                      background: selectedLocation.name === loc.name ? 'var(--amber-glow)' : 'transparent',
-                      color: selectedLocation.name === loc.name ? 'var(--amber-bright)' : 'var(--text-secondary)',
-                    }}
-                  >
-                    <div style={{ fontFamily: 'var(--font-data)', fontSize: 11 }}>{loc.name}</div>
-                    <div style={{ fontFamily: 'var(--font-data)', fontSize: 9, color: 'var(--text-muted)', marginTop: 1 }}>{loc.lat.toFixed(4)}, {loc.lng.toFixed(4)}</div>
-                  </button>
+            <div>
+              <label className="text-xs text-slate-400">Incident Node</label>
+              <select
+                value={selectedNode}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedNode(id);
+                  runSimulation(id);
+                }}
+                className="mt-1 w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white"
+              >
+                {nodes.map((n) => (
+                  <option key={n._id} value={n._id}>{n.name}</option>
                 ))}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <input
-                  type="number" step="0.0001" placeholder="Latitude (e.g. 19.0760)"
-                  value={customLat} onChange={(e) => setCustomLat(e.target.value)}
-                  style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-hairline)', borderRadius: 8, color: 'var(--text-primary)', fontFamily: 'var(--font-data)', fontSize: 12, outline: 'none' }}
-                />
-                <input
-                  type="number" step="0.0001" placeholder="Longitude (e.g. 72.8777)"
-                  value={customLng} onChange={(e) => setCustomLng(e.target.value)}
-                  style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-hairline)', borderRadius: 8, color: 'var(--text-primary)', fontFamily: 'var(--font-data)', fontSize: 12, outline: 'none' }}
-                />
-              </div>
-            )}
+              </select>
+            </div>
+
+            <button
+              onClick={() => runSimulation(selectedNode)}
+              disabled={!selectedNode || loading}
+              className="w-full px-3 py-2 rounded-lg bg-amber-500 text-slate-900 font-semibold text-sm hover:bg-amber-400 disabled:opacity-60"
+            >
+              {loading ? 'Simulating incident...' : 'Simulate Incident'}
+            </button>
           </div>
 
-          <button
-            onClick={handleDispatch}
-            disabled={loading}
-            className="btn-amber"
-            style={{ width: '100%', padding: '11px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: loading ? 0.6 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
-          >
-            {loading ? (
-              <>
-                <Activity style={{ width: 14, height: 14 }} />
-                Calculating ETAs...
-              </>
-            ) : (
-              <>
-                <Phone style={{ width: 14, height: 14 }} />
-                Calculate Emergency Response
-              </>
-            )}
-          </button>
+          {result?.summary.totalBlockedNodes.length ? (
+            <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-red-300">Infrastructure Impact Warning</p>
+                  <p className="text-xs text-red-200/80 mt-1">
+                    {result.summary.totalBlockedNodes.length} degraded/blocked transport node(s) are affecting emergency routing.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        {/* Center + Right - Response Results */}
-        <div className="lg:col-span-2 space-y-4">
-          {!response ? (
-            <div className="nexus-card" style={{ padding: 48, textAlign: 'center' }}>
-              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                <Navigation style={{ width: 30, height: 30, color: 'var(--text-muted)' }} />
-              </div>
-              <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: 'var(--text-secondary)', marginBottom: 8 }}>Select Location &amp; Type</h3>
-              <p style={{ fontFamily: 'var(--font-data)', fontSize: 12, color: 'var(--text-muted)', maxWidth: 360, margin: '0 auto' }}>
-                Choose an emergency type and incident location, then click "Calculate Emergency Response" to see real-time ETAs for fire, ambulance, and police units.
-              </p>
+        <div className="space-y-3">
+          {!result ? (
+            <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-8 text-center text-slate-500">
+              Select an incident node to generate service response cards.
             </div>
           ) : (
-            <>
-              {/* Overview Cards */}
-              <div className="grid grid-cols-3 gap-3">
-                <ResponseSummaryCard title="Fire Brigade" icon={Flame} units={response.fire} color="#ff6b2b" />
-                <ResponseSummaryCard title="Ambulance" icon={Ambulance} units={response.ambulance} color="#22d97a" />
-                <ResponseSummaryCard title="Police" icon={Shield} units={response.police} color="#7b68ff" />
-              </div>
-
-              {/* Detailed Unit List */}
-              {(['fire', 'ambulance', 'police'] as const).map((svc) => {
-                const units = response[svc];
-                const svcColors: Record<string, string> = { fire: '#ff6b2b', ambulance: '#22d97a', police: '#7b68ff' };
-                const icons: Record<string, React.ComponentType<any>> = { fire: Flame, ambulance: Ambulance, police: Shield };
-                const SvcIcon = icons[svc];
-                const svcColor = svcColors[svc];
-                return (
-                  <div key={svc} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', borderRadius: 10, overflow: 'hidden' }}>
-                    <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-hairline)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <SvcIcon style={{ width: 14, height: 14, color: svcColor }} />
-                      <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.08em', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{svc} Response Units</h3>
-                      <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-data)', fontSize: 10, color: 'var(--text-muted)' }}>{units.length} available</span>
-                    </div>
-                    <div>
-                      {units.slice(0, 5).map((unit, i) => (
-                        <div key={i} style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, borderTop: i > 0 ? '1px solid var(--border-hairline)' : 'none' }}>
-                          <div style={{ width: 28, height: 28, borderRadius: 6, background: svcColor + '20', color: svcColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-data)', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                            {i + 1}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{unit.name}</div>
-                            <div style={{ fontFamily: 'var(--font-data)', fontSize: 10, color: 'var(--text-muted)' }}>{unit.distance.toFixed(1)} km away</div>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontFamily: 'var(--font-data)', fontSize: 18, fontWeight: 700, color: getETAColor(unit.eta) }}>
-                              {formatETA(unit.eta)}
-                            </div>
-                            <div style={{ fontFamily: 'var(--font-data)', fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>ETA</div>
-                          </div>
-                          <div style={{ padding: '3px 8px', borderRadius: 4, fontFamily: 'var(--font-data)', fontSize: 10, background: unit.status === 'operational' ? 'rgba(34,217,122,0.12)' : 'rgba(240,165,0,0.12)', color: unit.status === 'operational' ? 'var(--st-op)' : 'var(--amber)' }}>
-                            {unit.status}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </>
+            (Object.keys(result.services) as ServiceType[]).map((serviceKey) => (
+              <ServiceCard
+                key={serviceKey}
+                eta={result.services[serviceKey]}
+                nodeById={nodeById}
+              />
+            ))
           )}
         </div>
       </div>
@@ -270,32 +134,98 @@ export default function EmergencyResponse() {
   );
 }
 
-function ResponseSummaryCard({
-  title, icon: Icon, units, color,
+function ServiceCard({
+  eta,
+  nodeById,
 }: {
-  title: string;
-  icon: React.ComponentType<any>;
-  units: ResponseUnit[];
-  color: string;
+  eta: EmergencyETA;
+  nodeById: Map<string, InfrastructureNode>;
 }) {
-  const fastest = units[0];
+  const meta = SERVICE_META[eta.serviceType];
+  const Icon = meta.icon;
+
+  const routeNodes = eta.routeNodes.map((id) => ({
+    id,
+    name: nodeById.get(id)?.name || id,
+    blocked: eta.blockedNodes.includes(id),
+  }));
+
+  const altRoute = eta.altRoute.map((id) => nodeById.get(id)?.name || id);
+
   return (
-    <div style={{ background: color + '12', border: `1px solid ${color}35`, borderRadius: 10, padding: '14px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <Icon style={{ width: 16, height: 16, color }} />
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{title}</span>
-      </div>
-      {fastest ? (
-        <>
-          <div style={{ fontFamily: 'var(--font-data)', fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
-            {fastest.eta < 1 ? '<1' : Math.round(fastest.eta)} <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>min</span>
+    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 space-y-3">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${meta.color}20` }}>
+            <Icon className="w-5 h-5" style={{ color: meta.color }} />
           </div>
-          <div style={{ fontFamily: 'var(--font-data)', fontSize: 11, color: 'var(--text-secondary)' }}>{fastest.name}</div>
-          <div style={{ fontFamily: 'var(--font-data)', fontSize: 9, color: 'var(--text-muted)', marginTop: 4 }}>{fastest.distance.toFixed(1)} km • {units.length} units</div>
-        </>
-      ) : (
-        <div style={{ fontFamily: 'var(--font-data)', fontSize: 12, color: 'var(--text-muted)' }}>No units available</div>
-      )}
+          <div>
+            <p className="text-sm font-semibold text-white">{meta.label}</p>
+            <p className="text-xs text-slate-500">Base: {eta.serviceBase.name}</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-xl font-bold" style={{ color: meta.color }}>{eta.adjustedETA.toFixed(1)} min</p>
+          <p className="text-[10px] text-slate-500">ETA</p>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+          <span>Golden hour pressure</span>
+          <span className="font-mono text-white">{eta.goldenHourPct.toFixed(1)}%</span>
+        </div>
+        <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${Math.min(100, eta.goldenHourPct)}%`,
+              background: eta.goldenHourPct > 85 ? '#ff3355' : eta.goldenHourPct > 60 ? '#f0a500' : '#22d97a',
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="bg-slate-900/40 rounded-lg p-3">
+        <p className="text-xs uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+          <Route className="w-3.5 h-3.5" /> Route Steps
+        </p>
+        {routeNodes.length === 0 ? (
+          <p className="text-xs text-slate-500">No route nodes nearby.</p>
+        ) : (
+          <div className="space-y-1">
+            {routeNodes.map((n, idx) => (
+              <div key={n.id} className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 truncate">{idx + 1}. {n.name}</span>
+                <span
+                  className="px-2 py-0.5 rounded-full"
+                  style={{
+                    background: n.blocked ? 'rgba(255,51,85,0.2)' : 'rgba(34,217,122,0.2)',
+                    color: n.blocked ? '#ff3355' : '#22d97a',
+                  }}
+                >
+                  {n.blocked ? 'blocked' : 'open'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="text-xs text-slate-400 flex items-start gap-2">
+        <Navigation className="w-3.5 h-3.5 mt-0.5" />
+        <span>
+          {altRoute.length > 0
+            ? `Alternate route candidates: ${altRoute.slice(0, 3).join(', ')}${altRoute.length > 3 ? '...' : ''}`
+            : 'No alternate route candidates found.'}
+        </span>
+      </div>
+
+      <div className="text-xs text-slate-500">
+        Distance: <span className="text-slate-300 font-mono">{eta.distanceKm.toFixed(2)} km</span>
+        <span className="mx-1">|</span>
+        Penalty: <span className="text-slate-300 font-mono">+{eta.penaltyMinutes.toFixed(1)} min</span>
+      </div>
     </div>
   );
 }
