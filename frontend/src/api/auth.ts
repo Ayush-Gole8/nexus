@@ -17,8 +17,13 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
-export async function login(email: string, password: string): Promise<AuthResponse> {
-  const { data } = await api.post('/login', { email, password });
+export async function login(
+  email: string,
+  password: string,
+  role?: string,
+  wardId?: string,
+): Promise<AuthResponse> {
+  const { data } = await api.post('/login', { email, password, role, wardId });
   return data;
 }
 

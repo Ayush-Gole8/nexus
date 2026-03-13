@@ -11,6 +11,8 @@ import dashboardRoutes from './routes/dashboard';
 import authRoutes from './routes/auth';
 import emergencyRoutes from './routes/emergency';
 import weatherRoutes from './routes/weather';
+import citizenRouter from './routes/citizen';
+import { authenticate as authMiddleware } from './middleware/auth';
 
 dotenv.config();
 
@@ -31,6 +33,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/emergency', emergencyRoutes);
 app.use('/api/weather', weatherRoutes);
+app.use('/api/citizen', authMiddleware, citizenRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {

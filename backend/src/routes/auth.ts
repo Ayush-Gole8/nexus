@@ -7,7 +7,7 @@ const router = Router();
 // POST /api/auth/register
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const { name, email, password, role, zone, phone } = req.body;
+    const { name, email, password, role, zone, phone, wardId } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
@@ -22,8 +22,9 @@ router.post('/register', async (req: Request, res: Response) => {
     const allowedRoles = ['official', 'responder', 'admin'];
     const userRole = allowedRoles.includes(role) ? role : 'citizen';
 
-    const user = await User.create({ name, email, password, role: userRole, zone, phone });
-    const token = generateToken(user);
+    const effectiveWardId = userRole === 'citizen' ? (wardId || zone || 'Mumbai') : undefined;
+    const user = await User.create({ name, email, password, role: userRole, zone, phone, wardId: effectiveWardId });
+    const token = generateToken(user, { wardId: effectiveWardId });
 
     res.status(201).json({
       token,
@@ -45,7 +46,7 @@ router.post('/register', async (req: Request, res: Response) => {
 // POST /api/auth/login
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, wardId } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
@@ -61,7 +62,11 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = generateToken(user);
+    const effectiveWardId = user.role === 'citizen' ? (wardId || user.wardId || user.zone) : undefined;
+    if (user.role === 'citizen' && !effectiveWardId) {
+      return res.status(400).json({ error: 'wardId is required for citizen login' });
+    }
+    const token = generateToken(user, { wardId: effectiveWardId });
 
     res.json({
       token,
@@ -71,6 +76,7 @@ router.post('/login', async (req: Request, res: Response) => {
         email: user.email,
         role: user.role,
         zone: user.zone,
+        wardId: effectiveWardId,
       },
     });
   } catch (err: any) {
@@ -87,6 +93,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
       email: req.user!.email,
       role: req.user!.role,
       zone: req.user!.zone,
+      wardId: req.user!.wardId,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
