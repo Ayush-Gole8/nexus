@@ -1,6 +1,211 @@
 import InfrastructureNode, { IInfrastructureNode } from '../models/InfrastructureNode';
 import Dependency from '../models/Dependency';
 
+// ───── Service type config ────────────────────────────────────────────────────
+const SERVICE_SUBTYPES: Record<string, string> = {
+  fire: 'fire_station',
+  ambulance: 'hospital',
+  police: 'police_station',
+};
+
+const SERVICE_SPEED_KMH: Record<string, number> = {
+  fire: 40,
+  ambulance: 35,
+  police: 50,
+};
+
+export interface ETAResult {
+  serviceType: 'fire' | 'ambulance' | 'police';
+  serviceBase: { nodeId: string; name: string; location: { lat: number; lng: number } };
+  incidentLocation: { lat: number; lng: number };
+  distanceKm: number;
+  baseETA: number;          // minutes, no penalties
+  adjustedETA: number;      // minutes, with road penalties
+  penaltyMinutes: number;
+  routeNodes: string[];     // IDs of transport nodes within 3km of route
+  blockedNodes: string[];   // IDs of degraded/failed transport nodes on route
+  altRoute: string[];       // IDs of operational transport nodes for alternate path
+  goldenHourPct: number;    // (adjustedETA / 60) * 100
+}
+
+/** Approximate perpendicular distance (km) from point P to line segment A→B */
+function pointToSegmentDistKm(
+  p: { lat: number; lng: number },
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  // Convert to a flat coordinate system in km centred on A
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const cosLat = Math.cos(toRad((a.lat + b.lat) / 2));
+  const ax = 0, ay = 0;
+  const bx = (b.lng - a.lng) * cosLat * 111.32;
+  const by = (b.lat - a.lat) * 111.32;
+  const px = (p.lng - a.lng) * cosLat * 111.32;
+  const py = (p.lat - a.lat) * 111.32;
+
+  const abLen2 = bx * bx + by * by;
+  if (abLen2 === 0) return Math.sqrt(px * px + py * py); // A === B
+
+  let t = (px * bx + py * by) / abLen2;
+  t = Math.max(0, Math.min(1, t));
+
+  const closestX = bx * t;
+  const closestY = by * t;
+  const dx = px - closestX;
+  const dy = py - closestY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
+ * Calculate ETA for a specific service type responding to an incident node.
+ */
+export async function calculateETA(
+  serviceType: 'fire' | 'ambulance' | 'police',
+  incidentNodeId: string,
+): Promise<ETAResult> {
+  const allNodes = await InfrastructureNode.find().lean<IInfrastructureNode[]>();
+
+  // Resolve incident node
+  const incidentNode = allNodes.find((n) => (n as any)._id.toString() === incidentNodeId);
+  if (!incidentNode) {
+    throw new Error(`Incident node ${incidentNodeId} not found`);
+  }
+  const incidentLocation = incidentNode.location;
+
+  // Find service bases matching the service type
+  const subtype = SERVICE_SUBTYPES[serviceType];
+  const serviceBases = allNodes.filter((n) => n.subtype === subtype);
+
+  if (serviceBases.length === 0) {
+    throw new Error(`No ${serviceType} service bases found (subtype: ${subtype})`);
+  }
+
+  // Pick nearest base (by Haversine)
+  const basesWithDist = serviceBases.map((b) => ({
+    base: b,
+    dist: haversineDistance(incidentLocation, b.location),
+  }));
+  basesWithDist.sort((a, b) => a.dist - b.dist);
+  const { base: nearestBase, dist: distanceKm } = basesWithDist[0];
+
+  const speedKmh = SERVICE_SPEED_KMH[serviceType];
+  const baseETA = (distanceKm / speedKmh) * 60; // minutes
+
+  // Transport nodes within 3km of the route line segment
+  const transportNodes = allNodes.filter((n) => n.type === 'transport');
+  const routeProximity = transportNodes.filter((n) => {
+    const d = pointToSegmentDistKm(n.location, nearestBase.location, incidentLocation);
+    return d <= 3;
+  });
+
+  const routeNodes = routeProximity.map((n) => (n as any)._id.toString());
+
+  const degradedOnRoute = routeProximity.filter((n) => n.status === 'degraded');
+  const failedOnRoute = routeProximity.filter(
+    (n) => n.status === 'failed' || n.criticalityScore >= 70,
+  );
+  const blockedNodes = [
+    ...degradedOnRoute.map((n) => (n as any)._id.toString()),
+    ...failedOnRoute.map((n) => (n as any)._id.toString()),
+  ].filter((id, i, arr) => arr.indexOf(id) === i); // dedupe
+
+  const penaltyMinutes = degradedOnRoute.length * 5 + failedOnRoute.length * 12;
+  const adjustedETA = Math.round((baseETA + penaltyMinutes) * 10) / 10;
+
+  // Alternative route: operational transport nodes close to incident (within 5km) not blocked
+  const blockedSet = new Set(blockedNodes);
+  const altRoute = transportNodes
+    .filter((n) => {
+      const id = (n as any)._id.toString();
+      return (
+        !blockedSet.has(id) &&
+        n.status === 'operational' &&
+        haversineDistance(incidentLocation, n.location) <= 5
+      );
+    })
+    .map((n) => (n as any)._id.toString());
+
+  const goldenHourPct = Math.min(100, Math.round((adjustedETA / 60) * 1000) / 10);
+
+  return {
+    serviceType,
+    serviceBase: {
+      nodeId: (nearestBase as any)._id.toString(),
+      name: nearestBase.name,
+      location: nearestBase.location,
+    },
+    incidentLocation,
+    distanceKm: Math.round(distanceKm * 100) / 100,
+    baseETA: Math.round(baseETA * 10) / 10,
+    adjustedETA,
+    penaltyMinutes,
+    routeNodes,
+    blockedNodes,
+    altRoute,
+    goldenHourPct,
+  };
+}
+
+/**
+ * For each emergency service base, compute the coverage radius (km) within
+ * which 90% of ETA calculations complete within 15 minutes.
+ * Accounts for average road degradation inside the theoretical coverage circle.
+ */
+export async function getServiceCoverage(): Promise<Array<{
+  nodeId: string;
+  name: string;
+  serviceType: 'fire' | 'ambulance' | 'police';
+  location: { lat: number; lng: number };
+  coverageRadiusKm: number;
+  degradedRoadCount: number;
+  effectiveSpeedKmh: number;
+}>> {
+  const allNodes = await InfrastructureNode.find().lean<IInfrastructureNode[]>();
+  const transportNodes = allNodes.filter((n) => n.type === 'transport');
+
+  const results: ReturnType<typeof getServiceCoverage> extends Promise<infer T> ? T : never[] = [];
+
+  for (const [svcType, subtype] of Object.entries(SERVICE_SUBTYPES) as [
+    'fire' | 'ambulance' | 'police',
+    string,
+  ][]) {
+    const speedKmh = SERVICE_SPEED_KMH[svcType];
+    // Base radius = distance covered in 15 min at service speed
+    const baseRadius = (speedKmh * 15) / 60; // km
+
+    const bases = allNodes.filter((n) => n.subtype === subtype);
+    for (const base of bases) {
+      // Count degraded road nodes inside the base radius
+      const degradedInRadius = transportNodes.filter((n) => {
+        const d = haversineDistance(base.location, n.location);
+        return d <= baseRadius && n.status !== 'operational';
+      });
+
+      // Estimate expected penalty: each degraded node imposes ~5 min average penalty
+      // Split the count across all routes inside radius — assume ~avg 0.5 degraded per route
+      const avgPenaltyMin = degradedInRadius.length > 0
+        ? Math.min(10, degradedInRadius.length * 0.5)
+        : 0;
+
+      // Effective time budget for travel = 15 min - avg penalty
+      const travelBudget = Math.max(1, 15 - avgPenaltyMin * 0.9); // 90th-pct correction
+      const coverageRadiusKm = (speedKmh * travelBudget) / 60;
+
+      results.push({
+        nodeId: (base as any)._id.toString(),
+        name: base.name,
+        serviceType: svcType,
+        location: base.location,
+        coverageRadiusKm: Math.round(coverageRadiusKm * 100) / 100,
+        degradedRoadCount: degradedInRadius.length,
+        effectiveSpeedKmh: speedKmh,
+      });
+    }
+  }
+
+  return results;
+}
+
 interface Location {
   lat: number;
   lng: number;

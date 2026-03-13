@@ -5,6 +5,7 @@ export interface InfrastructureNode {
   name: string;
   type: 'power' | 'water' | 'transport' | 'telecom' | 'emergency';
   subtype: string;
+  zone?: string;
   location: { lat: number; lng: number };
   status: 'operational' | 'degraded' | 'failed' | 'maintenance' | 'unknown';
   capacity: number;

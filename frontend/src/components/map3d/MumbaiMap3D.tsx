@@ -60,6 +60,7 @@ interface MumbaiMap3DProps {
   dependencies: Dependency[];
   sectorFilter: string;
   statusFilter: string;
+  visibleLayers?: Set<string>;
   onNodeSelect?: (node: InfrastructureNode | null) => void;
 }
 
@@ -102,9 +103,19 @@ function NodeObject({
       onPointerOut={() => onHover(null)}
       onClick={(e) => { e.stopPropagation(); onClick(node.id); }}
     >
-      {/* Ground ring */}
+      {/* Bounding sphere — radius = (6 + criticality × 1.5) / 700 for click detection */}
+      <mesh position={[0, 0.15, 0]}>
+        <sphereGeometry args={[(6 + node.criticalityScore * 1.5) / 700, 8, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
+      {/* Ground ring — outer, sector colour, scales with criticality */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]}>
-        <ringGeometry args={[0.18, 0.22, 32]} />
+        <ringGeometry args={[
+          0.14 + (node.criticalityScore / 100) * 0.09,
+          0.18 + (node.criticalityScore / 100) * 0.09,
+          32,
+        ]} />
         <meshStandardMaterial
           color={color}
           emissive={color}
@@ -115,12 +126,16 @@ function NodeObject({
         />
       </mesh>
 
-      {/* Status indicator ring (inner) */}
+      {/* Status ring — green=operational, amber=degraded, red=failed/critical */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.003, 0]}>
-        <ringGeometry args={[0.14, 0.17, 32]} />
+        <ringGeometry args={[
+          0.10 + (node.criticalityScore / 100) * 0.07,
+          0.13 + (node.criticalityScore / 100) * 0.07,
+          32,
+        ]} />
         <meshStandardMaterial
-          color={STATUS_COLORS[node.status] || '#666'}
-          emissive={STATUS_COLORS[node.status] || '#666'}
+          color={node.criticalityScore >= 90 ? '#ff3355' : (STATUS_COLORS[node.status] || '#666')}
+          emissive={node.criticalityScore >= 90 ? '#ff3355' : (STATUS_COLORS[node.status] || '#666')}
           emissiveIntensity={0.6}
           transparent
           opacity={0.5}
@@ -207,13 +222,12 @@ function NodeObject({
 /* ═══════════════════════════════════════════════════════════
    3D Connections between nodes
    ═══════════════════════════════════════════════════════════ */
-const DEP_COLORS: Record<string, string> = {
-  power_supply: '#ffcc33',
-  water_supply: '#33ddff',
-  data_link: '#c077ff',
-  physical_access: '#33ffaa',
-  operational: '#6688aa',
-};
+/* Edge appearance — critical (strength≥0.8): red, direct (≥0.5): blue, indirect: dark blue */
+function edgeAppearance(strength: number): { color: string; opacity: number; lineWidth: number } {
+  if (strength >= 0.8) return { color: '#ff3366', opacity: 0.8,  lineWidth: 1.8 };
+  if (strength >= 0.5) return { color: '#1a4488', opacity: 0.45, lineWidth: 1.2 };
+  return                        { color: '#334466', opacity: 0.25, lineWidth: 0.7 };
+}
 
 function ConnectionLines({
   edges,
@@ -229,26 +243,25 @@ function ConnectionLines({
         const tgt = nodeMap.get(edge.target);
         if (!src || !tgt) return null;
 
-        const color = DEP_COLORS[edge.dependencyType] || '#555';
-        const midY = 0.15 + edge.strength * 0.15; // arc height based on strength
+        const { color, opacity, lineWidth } = edgeAppearance(edge.strength);
+        const midY = 0.12 + edge.strength * 0.18;
 
-        // Build a curved arc via 3 points
         const p1 = new THREE.Vector3(...src.position);
         const p3 = new THREE.Vector3(...tgt.position);
         const mid = p1.clone().lerp(p3, 0.5);
         mid.y = midY;
 
         const curve = new THREE.QuadraticBezierCurve3(p1, mid, p3);
-        const points = curve.getPoints(20);
+        const points = curve.getPoints(24);
 
         return (
           <Line
             key={edge.id}
             points={points}
             color={color}
-            lineWidth={0.8 + edge.strength * 1.2}
+            lineWidth={lineWidth}
             transparent
-            opacity={0.35}
+            opacity={opacity}
           />
         );
       })}
@@ -564,6 +577,7 @@ export default function MumbaiMap3D({
   dependencies,
   sectorFilter,
   statusFilter,
+  visibleLayers,
   onNodeSelect,
 }: MumbaiMap3DProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -572,7 +586,9 @@ export default function MumbaiMap3D({
   /* Build 3D node data */
   const node3DData = useMemo<Node3DData[]>(() => {
     return nodes
-      .filter((n) => (sectorFilter === 'all' || n.type === sectorFilter))
+      .filter((n) => visibleLayers
+        ? visibleLayers.has(n.type)
+        : (sectorFilter === 'all' || n.type === sectorFilter))
       .filter((n) => (statusFilter === 'all' || n.status === statusFilter))
       .map((n) => ({
         id: n._id,
@@ -588,7 +604,7 @@ export default function MumbaiMap3D({
         lng: n.location.lng,
         properties: n.properties,
       }));
-  }, [nodes, sectorFilter, statusFilter]);
+  }, [nodes, sectorFilter, statusFilter, visibleLayers]);
 
   const nodeMap = useMemo(() => {
     const m = new Map<string, Node3DData>();

@@ -4,6 +4,7 @@ import InfrastructureNode from '../models/InfrastructureNode';
 import Dependency from '../models/Dependency';
 import Scenario from '../models/Scenario';
 import User from '../models/User';
+import WeatherEvent from '../models/WeatherEvent';
 
 dotenv.config();
 
@@ -1434,6 +1435,121 @@ async function seed() {
   }
   console.log(`Created ${users.length} demo users`);
 
+  // ── Monsoon / Flood-Risk WeatherEvents ────────────────────
+  // 8 high-risk Mumbai flood zones linked to representative infrastructure nodes.
+  // Nodes referenced by index in createdNodes[]:
+  //   3  – Dharavi 220kV Substation      (power)
+  //  25  – Dharavi Intermediate Pump Stn  (water)
+  //  13  – Kurla Distribution Hub         (power)
+  //  47  – Kurla Station                  (transport, index 47)
+  //  29  – South Mumbai Water Dist Main   (water)  → used for Sion zone
+  //  20  – Bhandup Complex WTP            (water)
+  //   7  – Vikhroli 220kV Substation      (power)
+  //  11  – Andheri Distribution Hub       (power)
+  //  39  – SCLR (Chunabhatti corridor)    (transport)
+  //   8  – Chembur 110kV Substation       (power)  → Govandi zone
+
+  const weatherEvents = [
+    // ── Dharavi (worst urban flood zone in Asia) ──
+    {
+      nodeId: createdNodes[3]._id,   // Dharavi 220kV Substation
+      season: 'monsoon',
+      riskMultiplier: 3.0,
+      floodZone: true,
+      historicalFailures: 15,
+      zoneName: 'Dharavi',
+    },
+    {
+      nodeId: createdNodes[25]._id,  // Dharavi Intermediate Pump Station
+      season: 'monsoon',
+      riskMultiplier: 3.0,
+      floodZone: true,
+      historicalFailures: 12,
+      zoneName: 'Dharavi',
+    },
+
+    // ── Kurla ──
+    {
+      nodeId: createdNodes[13]._id,  // Kurla Distribution Hub
+      season: 'monsoon',
+      riskMultiplier: 2.8,
+      floodZone: true,
+      historicalFailures: 12,
+      zoneName: 'Kurla',
+    },
+    {
+      nodeId: createdNodes[47]._id,  // Kurla Station (transport)
+      season: 'monsoon',
+      riskMultiplier: 2.8,
+      floodZone: true,
+      historicalFailures: 10,
+      zoneName: 'Kurla',
+    },
+
+    // ── Andheri (East) ──
+    {
+      nodeId: createdNodes[11]._id,  // Andheri Distribution Hub
+      season: 'monsoon',
+      riskMultiplier: 2.6,
+      floodZone: true,
+      historicalFailures: 11,
+      zoneName: 'Andheri (East)',
+    },
+
+    // ── Govandi ──
+    {
+      nodeId: createdNodes[8]._id,   // Chembur 110kV Substation (serves Govandi corridor)
+      season: 'monsoon',
+      riskMultiplier: 2.7,
+      floodZone: true,
+      historicalFailures: 10,
+      zoneName: 'Govandi',
+    },
+
+    // ── Sion ──
+    {
+      nodeId: createdNodes[29]._id,  // South Mumbai Water Distribution Main (serves Sion)
+      season: 'monsoon',
+      riskMultiplier: 2.5,
+      floodZone: true,
+      historicalFailures: 8,
+      zoneName: 'Sion',
+    },
+
+    // ── Chunabhatti ──
+    {
+      nodeId: createdNodes[39]._id,  // SCLR (Chunabhatti road corridor node)
+      season: 'monsoon',
+      riskMultiplier: 2.4,
+      floodZone: true,
+      historicalFailures: 7,
+      zoneName: 'Chunabhatti',
+    },
+
+    // ── Vikhroli ──
+    {
+      nodeId: createdNodes[7]._id,   // Vikhroli 220kV Substation
+      season: 'monsoon',
+      riskMultiplier: 2.2,
+      floodZone: true,
+      historicalFailures: 9,
+      zoneName: 'Vikhroli',
+    },
+
+    // ── Bhandup ──
+    {
+      nodeId: createdNodes[20]._id,  // Bhandup Complex WTP
+      season: 'monsoon',
+      riskMultiplier: 2.0,
+      floodZone: true,
+      historicalFailures: 6,
+      zoneName: 'Bhandup',
+    },
+  ];
+
+  const createdWeatherEvents = await WeatherEvent.insertMany(weatherEvents);
+  console.log(`Inserted ${createdWeatherEvents.length} monsoon weather events`);
+
   // ── Summary ────────────────────────────────────────────────
   console.log('\n─────────────────────────────────────────────');
   console.log('  Seed complete! Summary');
@@ -1442,6 +1558,7 @@ async function seed() {
   console.log(`  Dependencies: ${createdDeps.length}`);
   console.log(`  Scenarios   : ${createdScenarios.length}`);
   console.log(`  Users       : ${users.length}`);
+  console.log(`  WeatherEvts : ${createdWeatherEvents.length}`);
 
   const sectors: Record<string, number> = {};
   for (const n of createdNodes) {
