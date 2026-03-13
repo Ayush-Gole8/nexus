@@ -12,6 +12,7 @@ import authRoutes from './routes/auth';
 import emergencyRoutes from './routes/emergency';
 import weatherRoutes from './routes/weather';
 import citizenRouter from './routes/citizen';
+import eventsRouter, { broadcastEvent } from './routes/events';
 import { authenticate as authMiddleware } from './middleware/auth';
 
 dotenv.config();
@@ -34,6 +35,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/emergency', emergencyRoutes);
 app.use('/api/weather', weatherRoutes);
 app.use('/api/citizen', authMiddleware, citizenRouter);
+app.use('/api/events', eventsRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -54,3 +56,5 @@ const startServer = async () => {
 };
 
 startServer();
+
+export { broadcastEvent };

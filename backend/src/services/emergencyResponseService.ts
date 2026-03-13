@@ -24,7 +24,15 @@ export interface ETAResult {
   penaltyMinutes: number;
   routeNodes: string[];     // IDs of transport nodes within 3km of route
   blockedNodes: string[];   // IDs of degraded/failed transport nodes on route
-  altRoute: string[];       // IDs of operational transport nodes for alternate path
+  altRoute: string[];       // IDs of non-blocked transport nodes on alternate path
+  altRouteNames: string[];
+  penaltyBreakdown: Array<{
+    nodeId: string;
+    name: string;
+    zone: string;
+    status: string;
+    penaltyMinutes: number;
+  }>;
   goldenHourPct: number;    // (adjustedETA / 60) * 100
 }
 
@@ -64,6 +72,8 @@ export async function calculateETA(
   incidentNodeId: string,
 ): Promise<ETAResult> {
   const allNodes = await InfrastructureNode.find().lean<IInfrastructureNode[]>();
+  const nodeMap = new Map<string, IInfrastructureNode>();
+  allNodes.forEach((n) => nodeMap.set((n as any)._id.toString(), n));
 
   // Resolve incident node
   const incidentNode = allNodes.find((n) => (n as any)._id.toString() === incidentNodeId);
@@ -102,7 +112,7 @@ export async function calculateETA(
 
   const degradedOnRoute = routeProximity.filter((n) => n.status === 'degraded');
   const failedOnRoute = routeProximity.filter(
-    (n) => n.status === 'failed' || n.criticalityScore >= 70,
+    (n) => n.status === 'failed' || n.status === 'critical',
   );
   const blockedNodes = [
     ...degradedOnRoute.map((n) => (n as any)._id.toString()),
@@ -112,18 +122,37 @@ export async function calculateETA(
   const penaltyMinutes = degradedOnRoute.length * 5 + failedOnRoute.length * 12;
   const adjustedETA = Math.round((baseETA + penaltyMinutes) * 10) / 10;
 
-  // Alternative route: operational transport nodes close to incident (within 5km) not blocked
+  // Alternative route: nearest non-blocked transport candidates only when blockages exist.
   const blockedSet = new Set(blockedNodes);
-  const altRoute = transportNodes
-    .filter((n) => {
-      const id = (n as any)._id.toString();
-      return (
-        !blockedSet.has(id) &&
-        n.status === 'operational' &&
-        haversineDistance(incidentLocation, n.location) <= 5
-      );
-    })
-    .map((n) => (n as any)._id.toString());
+  const altRouteCandidates = blockedNodes.length > 0
+    ? transportNodes
+      .filter((n) => !blockedSet.has((n as any)._id.toString()))
+      .map((n) => ({
+        node: n,
+        pathDistance: pointToSegmentDistKm(n.location, nearestBase.location, incidentLocation),
+        baseDistance: haversineDistance(nearestBase.location, n.location),
+      }))
+      .sort((a, b) => {
+        if (a.pathDistance !== b.pathDistance) return a.pathDistance - b.pathDistance;
+        return a.baseDistance - b.baseDistance;
+      })
+      .slice(0, 3)
+    : [];
+
+  const altRoute = altRouteCandidates.map((c) => (c.node as any)._id.toString());
+  const altRouteNames = altRouteCandidates.map((c) => c.node.name);
+
+  const penaltyBreakdown = blockedNodes.map((nodeId) => {
+    const node = nodeMap.get(nodeId);
+    const isDegraded = node?.status === 'degraded';
+    return {
+      nodeId,
+      name: node?.name ?? 'Unknown node',
+      zone: node?.zone ?? 'Unknown',
+      status: node?.status ?? 'unknown',
+      penaltyMinutes: isDegraded ? 5 : 12,
+    };
+  });
 
   const goldenHourPct = Math.min(100, Math.round((adjustedETA / 60) * 1000) / 10);
 
@@ -142,6 +171,8 @@ export async function calculateETA(
     routeNodes,
     blockedNodes,
     altRoute,
+    altRouteNames,
+    penaltyBreakdown,
     goldenHourPct,
   };
 }

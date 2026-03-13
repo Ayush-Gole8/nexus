@@ -7,7 +7,7 @@ export interface InfrastructureNode {
   subtype: string;
   zone?: string;
   location: { lat: number; lng: number };
-  status: 'operational' | 'degraded' | 'failed' | 'maintenance' | 'unknown';
+  status: 'operational' | 'degraded' | 'failed' | 'critical' | 'maintenance' | 'unknown';
   capacity: number;
   currentLoad: number;
   criticalityScore: number;
@@ -183,6 +183,7 @@ export const STATUS_COLORS: Record<string, string> = {
   operational: '#22d97a',
   degraded:    '#f0a500',
   failed:      '#ff3355',
+  critical:    '#ef4444',
   maintenance: '#7b68ff',
   unknown:     '#5c5649',
 };

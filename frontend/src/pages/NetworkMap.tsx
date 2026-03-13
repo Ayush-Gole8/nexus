@@ -15,7 +15,6 @@ type ViewMode = '3d' | 'graph';
 
 export default function NetworkMap() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
-  const [filteredData, setFilteredData] = useState<GraphData | null>(null);
   const [allNodes, setAllNodes] = useState<InfrastructureNode[]>([]);
   const [allDependencies, setAllDependencies] = useState<Dependency[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,7 +26,7 @@ export default function NetworkMap() {
   const [visibleSectors, setVisibleSectors] = useState<Set<string>>(
     () => new Set(['power', 'water', 'transport', 'telecom', 'emergency']),
   );
-  const { monsoonActive, setMonsoonActive, monsoonZones } = useMonsoon();
+  const { monsoonActive, setMonsoonActive, monsoonZones, monsoonRiskMap } = useMonsoon();
   const navigate = useNavigate();
 
   const floodZoneIds = useMemo(() => {
@@ -50,7 +49,6 @@ export default function NetworkMap() {
         getDependencies(),
       ]);
       setGraphData(graphRes);
-      setFilteredData(graphRes);
       setAllNodes(nodesRes);
       setAllDependencies(depsRes);
     } catch (err) {
@@ -64,24 +62,47 @@ export default function NetworkMap() {
     loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    if (!graphData) return;
+  const filteredNodeIds = useMemo(() => {
+    return new Set(
+      allNodes
+        .filter((n) => (sectorFilter === 'all' || n.type === sectorFilter))
+        .filter((n) => (statusFilter === 'all' || n.status === statusFilter))
+        .map((n) => n._id),
+    );
+  }, [allNodes, sectorFilter, statusFilter]);
 
-    let nodes = graphData.nodes;
-    if (sectorFilter !== 'all') {
-      nodes = nodes.filter((n) => n.data.type === sectorFilter);
-    }
-    if (statusFilter !== 'all') {
-      nodes = nodes.filter((n) => n.data.status === statusFilter);
-    }
+  const filteredNodes3D = useMemo(() => {
+    return allNodes.filter((n) => filteredNodeIds.has(n._id));
+  }, [allNodes, filteredNodeIds]);
+
+  const filteredDeps3D = useMemo(() => {
+    return allDependencies.filter((d) => {
+      const source = typeof d.sourceNodeId === 'string' ? d.sourceNodeId : d.sourceNodeId._id;
+      const target = typeof d.targetNodeId === 'string' ? d.targetNodeId : d.targetNodeId._id;
+      return filteredNodeIds.has(source) && filteredNodeIds.has(target);
+    });
+  }, [allDependencies, filteredNodeIds]);
+
+  const filteredData = useMemo<GraphData | null>(() => {
+    if (!graphData) return null;
+    const nodes = graphData.nodes
+      .filter((n) => filteredNodeIds.has(n.id))
+      .map((n) => {
+        const risk = monsoonRiskMap.get(n.id);
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            monsoonRisk: typeof risk === 'number' ? risk : null,
+            monsoonActive,
+          },
+        };
+      });
 
     const nodeIds = new Set(nodes.map((n) => n.id));
-    const edges = graphData.edges.filter(
-      (e) => nodeIds.has(e.source) && nodeIds.has(e.target)
-    );
-
-    setFilteredData({ nodes, edges });
-  }, [graphData, sectorFilter, statusFilter]);
+    const edges = graphData.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
+    return { nodes, edges };
+  }, [graphData, filteredNodeIds, monsoonActive, monsoonRiskMap]);
 
   const toggleLayer = useCallback((sector: string) => {
     setVisibleSectors((prev) => {
@@ -176,6 +197,9 @@ export default function NetworkMap() {
               <option value="operational">Operational</option>
               <option value="degraded">Degraded</option>
               <option value="failed">Failed</option>
+              <option value="critical">Critical</option>
+              <option value="maintenance">Maintenance</option>
+              <option value="unknown">Unknown</option>
             </select>
           </div>
           <div className="relative">
@@ -264,14 +288,15 @@ export default function NetworkMap() {
           </div>
         ) : viewMode === '3d' ? (
           <MumbaiMap3D
-            nodes={allNodes}
-            dependencies={allDependencies}
+            nodes={filteredNodes3D}
+            dependencies={filteredDeps3D}
             sectorFilter={sectorFilter}
             statusFilter={statusFilter}
             visibleLayers={visibleSectors}
             highlightedNodeIds={highlightedNodeIds}
             monsoonActive={monsoonActive}
             monsoonZones={monsoonZones}
+            monsoonRiskMap={monsoonRiskMap}
             onNodeSelect={setSelectedNode}
           />
         ) : (

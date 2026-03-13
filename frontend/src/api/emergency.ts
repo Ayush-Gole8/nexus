@@ -22,6 +22,7 @@ export interface SimulateIncidentResult {
 export interface EmergencyETA {
   serviceType: 'fire' | 'ambulance' | 'police';
   serviceBase: { nodeId: string; name: string; location: { lat: number; lng: number } };
+  nearestBase?: { nodeId?: string; name?: string };
   incidentLocation: { lat: number; lng: number };
   distanceKm: number;
   baseETA: number;
@@ -30,6 +31,14 @@ export interface EmergencyETA {
   routeNodes: string[];
   blockedNodes: string[];
   altRoute: string[];
+  altRouteNames: string[];
+  penaltyBreakdown: Array<{
+    nodeId: string;
+    name: string;
+    zone: string;
+    status: string;
+    penaltyMinutes: number;
+  }>;
   goldenHourPct: number;
 }
 
