@@ -20,6 +20,9 @@ export default function NetworkMap() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
   const [selectedNode, setSelectedNode] = useState<InfrastructureNode | null>(null);
+  const [visibleSectors, setVisibleSectors] = useState<Set<string>>(
+    () => new Set(['power', 'water', 'transport', 'telecom', 'emergency']),
+  );
   const navigate = useNavigate();
 
   const loadData = useCallback(async () => {
@@ -63,6 +66,15 @@ export default function NetworkMap() {
 
     setFilteredData({ nodes, edges });
   }, [graphData, sectorFilter, statusFilter]);
+
+  const toggleLayer = useCallback((sector: string) => {
+    setVisibleSectors((prev) => {
+      const next = new Set(prev);
+      if (next.has(sector)) next.delete(sector);
+      else next.add(sector);
+      return next;
+    });
+  }, []);
 
   const handleAnalyzeCascade = useCallback(
     (nodeId: string) => {
@@ -142,21 +154,53 @@ export default function NetworkMap() {
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 px-4 py-2 rounded-lg" style={{ background: 'rgba(10,18,38,0.85)', border: '1px solid rgba(40,80,160,0.35)' }}>
-        <span className="text-[10px] uppercase font-semibold tracking-[2px]" style={{ color: '#4a6080', fontFamily: "'Share Tech Mono', monospace" }}>Sectors:</span>
-        {Object.entries(SECTOR_COLORS).map(([sector, color]) => (
-          <div key={sector} className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
-            <span className="text-xs text-slate-400 capitalize">{sector}</span>
-          </div>
-        ))}
-        {viewMode === '3d' && (
+      {/* Sector Legend / Layer Toggles */}
+      <div
+        className="flex items-center gap-3 px-4 py-2 rounded-lg flex-wrap"
+        style={{ background: 'rgba(10,18,38,0.85)', border: '1px solid rgba(40,80,160,0.35)' }}
+      >
+        <span
+          className="text-[10px] uppercase font-semibold tracking-[2px]"
+          style={{ color: '#4a6080', fontFamily: "'Share Tech Mono', monospace" }}
+        >
+          {viewMode === '3d' ? 'Layers:' : 'Sectors:'}
+        </span>
+        {Object.entries(SECTOR_LABELS).map(([sector, label]) => {
+          const sColor = SECTOR_COLORS[sector];
+          const isActive = viewMode !== '3d' || visibleSectors.has(sector);
+          return viewMode === '3d' ? (
+            <button
+              key={sector}
+              onClick={() => toggleLayer(sector)}
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border transition-all"
+              style={{
+                backgroundColor: isActive ? `${sColor}18` : 'transparent',
+                borderColor: isActive ? `${sColor}55` : '#1e3a5f',
+                color: isActive ? sColor : '#475569',
+              }}
+            >
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: isActive ? sColor : '#334155' }} />
+              {label}
+            </button>
+          ) : (
+            <div key={sector} className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: sColor }} />
+              <span className="text-xs text-slate-400 capitalize">{sector}</span>
+            </div>
+          );
+        })}
+        {viewMode === '3d' ? (
           <>
+            <button
+              onClick={() => setVisibleSectors(new Set(Object.keys(SECTOR_LABELS)))}
+              className="ml-1 text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              All
+            </button>
             <span className="text-slate-600 mx-1">|</span>
             <span className="text-[10px] text-slate-500">Drag to orbit · Scroll to zoom · Click node for details</span>
           </>
-        )}
+        ) : null}
       </div>
 
       {/* Main view */}
@@ -177,6 +221,7 @@ export default function NetworkMap() {
             dependencies={allDependencies}
             sectorFilter={sectorFilter}
             statusFilter={statusFilter}
+            visibleLayers={visibleSectors}
             onNodeSelect={setSelectedNode}
           />
         ) : (
@@ -192,6 +237,8 @@ export default function NetworkMap() {
             node={selectedNode}
             onClose={() => setSelectedNode(null)}
             onAnalyzeCascade={handleAnalyzeCascade}
+            dependencies={allDependencies}
+            allNodes={allNodes}
           />
         )}
       </div>
